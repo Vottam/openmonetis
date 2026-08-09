@@ -1113,3 +1113,195 @@ export const establishmentLogosRelations = relations(
 		}),
 	}),
 );
+
+// ===================== LOANS =====================
+
+export const loanTypes = pgTable("loan_types", {
+	id: text("id").primaryKey(),
+	name: text("name").notNull(),
+	description: text("description"),
+	createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+		.notNull()
+		.defaultNow(),
+	updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+		.notNull()
+		.defaultNow(),
+});
+
+export const institutions = pgTable("institutions", {
+	id: text("id").primaryKey(),
+	name: text("name").notNull(),
+	type: text("type").notNull(),
+	description: text("description"),
+	userId: text("user_id")
+		.notNull()
+		.references(() => user.id, { onDelete: "cascade" }),
+	createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+		.notNull()
+		.defaultNow(),
+	updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+		.notNull()
+		.defaultNow(),
+});
+
+export const loanOperations = pgTable("loan_operations", {
+	id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+	institutionId: text("institution_id")
+		.notNull()
+		.references(() => institutions.id, { onDelete: "cascade" }),
+	loanType: text("loan_type").notNull(),
+	principalBorrowed: numeric("principal_borrowed", { precision: 12, scale: 2 })
+		.notNull()
+		.default("0"),
+	amountReceived: numeric("amount_received", { precision: 12, scale: 2 })
+		.notNull()
+		.default("0"),
+	totalContracted: numeric("total_contracted", { precision: 12, scale: 2 })
+		.notNull()
+		.default("0"),
+	totalInterest: numeric("total_interest", { precision: 12, scale: 2 })
+		.notNull()
+		.default("0"),
+	totalCharge: numeric("total_charge", { precision: 12, scale: 2 })
+		.notNull()
+		.default("0"),
+	totalPayable: numeric("total_payable", { precision: 12, scale: 2 })
+		.notNull()
+		.default("0"),
+	startDate: date("start_date").notNull(),
+	endDate: date("end_date"),
+	nextDueDate: date("next_due_date").notNull(),
+	currentInstallment: smallint("current_installment").notNull().default(1),
+	totalInstallments: smallint("total_installments").notNull().default(1),
+	status: text("status").notNull().default("active"),
+	userId: text("user_id")
+		.notNull()
+		.references(() => user.id, { onDelete: "cascade" }),
+	payerId: text("payer_id").references(() => payers.id, {
+		onDelete: "set null",
+	}),
+	createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+		.notNull()
+		.defaultNow(),
+	updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+		.notNull()
+		.defaultNow(),
+});
+
+export const loanInstallments = pgTable("loan_installments", {
+	id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+	loanOperationId: uuid("loan_operation_id")
+		.notNull()
+		.references(() => loanOperations.id, { onDelete: "cascade" }),
+	installmentNumber: smallint("installment_number").notNull(),
+	dueDate: date("due_date").notNull(),
+	expectedValue: numeric("expected_value", { precision: 12, scale: 2 })
+		.notNull()
+		.default("0"),
+	expectedPrincipal: numeric("expected_principal", { precision: 12, scale: 2 })
+		.notNull()
+		.default("0"),
+	expectedInterest: numeric("expected_interest", { precision: 12, scale: 2 })
+		.notNull()
+		.default("0"),
+	paid: boolean("paid").notNull().default(false),
+	paidAmount: numeric("paid_amount", { precision: 12, scale: 2 }).default("0"),
+	paidPrincipal: numeric("paid_principal", { precision: 12, scale: 2 }).default(
+		"0",
+	),
+	paidInterest: numeric("paid_interest", { precision: 12, scale: 2 }).default(
+		"0",
+	),
+	paidDate: timestamp("paid_date"),
+	status: text("status").notNull().default("pending"),
+	userId: text("user_id")
+		.notNull()
+		.references(() => user.id, { onDelete: "cascade" }),
+	payerId: text("payer_id").references(() => payers.id, {
+		onDelete: "set null",
+	}),
+	createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+		.notNull()
+		.defaultNow(),
+	updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+		.notNull()
+		.defaultNow(),
+});
+
+export const loanPayments = pgTable("loan_payments", {
+	id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+	loanOperationId: uuid("loan_operation_id")
+		.notNull()
+		.references(() => loanOperations.id, { onDelete: "cascade" }),
+	installmentId: uuid("installment_id").references(() => loanInstallments.id, {
+		onDelete: "cascade",
+	}),
+	installmentNumber: smallint("installment_number").notNull(),
+	amount: numeric("amount", { precision: 12, scale: 2 }).notNull().default("0"),
+	principalPaid: numeric("principal_paid", { precision: 12, scale: 2 }).default(
+		"0",
+	),
+	interestPaid: numeric("interest_paid", { precision: 12, scale: 2 }).default(
+		"0",
+	),
+	chargePaid: numeric("charge_paid", { precision: 12, scale: 2 }).default("0"),
+	paidAt: timestamp("paid_at", { mode: "date", withTimezone: true }),
+	status: text("status").notNull().default("paid"),
+	userId: text("user_id")
+		.notNull()
+		.references(() => user.id, { onDelete: "cascade" }),
+	payerId: text("payer_id").references(() => payers.id, {
+		onDelete: "set null",
+	}),
+	createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+		.notNull()
+		.defaultNow(),
+	updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+		.notNull()
+		.defaultNow(),
+});
+
+export const loanInstallmentsRelations = relations(
+	loanInstallments,
+	({ one }) => ({
+		loanOperation: one(loanOperations, {
+			fields: [loanInstallments.loanOperationId],
+			references: [loanOperations.id],
+		}),
+		user: one(user, {
+			fields: [loanInstallments.userId],
+			references: [user.id],
+		}),
+	}),
+);
+
+export const loanPaymentsRelations = relations(loanPayments, ({ one }) => ({
+	loanOperation: one(loanOperations, {
+		fields: [loanPayments.loanOperationId],
+		references: [loanOperations.id],
+	}),
+	installment: one(loanInstallments, {
+		fields: [loanPayments.installmentId],
+		references: [loanInstallments.id],
+	}),
+	user: one(user, {
+		fields: [loanPayments.userId],
+		references: [user.id],
+	}),
+}));
+
+export const loanOperationsRelations = relations(
+	loanOperations,
+	({ one, many }) => ({
+		user: one(user, {
+			fields: [loanOperations.userId],
+			references: [user.id],
+		}),
+		institution: one(institutions, {
+			fields: [loanOperations.institutionId],
+			references: [institutions.id],
+		}),
+		installments: many(loanInstallments),
+		payments: many(loanPayments),
+	}),
+);
