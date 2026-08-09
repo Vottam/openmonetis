@@ -545,7 +545,7 @@ openmonetis/
 │   ├── app/                       # Next.js App Router (rotas finas)
 │   │   ├── api/                   # API Routes (auth, health, inbox)
 │   │   ├── (auth)/                # Login e cadastro
-│   │   ├── (dashboard)/           # Rotas protegidas (transactions, cards, accounts, etc.)
+│   │   ├── (dashboard)/           # Rotas protegidas (transactions, cards, accounts, loans, etc.)
 │   │   └── (landing-page)/        # Página inicial pública
 │   │
 │   ├── features/                  # Código de domínio por feature
@@ -556,6 +556,7 @@ openmonetis/
 │   │   ├── accounts/              # Contas bancárias
 │   │   ├── categories/            # Categorias e histórico
 │   │   ├── budgets/               # Orçamentos
+│   │   ├── loans/                 # Empréstimos, parcelas e limites
 │   │   ├── payers/                # Pagadores e compartilhamento
 │   │   ├── inbox/                 # Pré-lançamentos do Companion
 │   │   ├── insights/              # Análises com IA

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { beforeEach, describe, expect, it } from "vitest";
 import { institutions, loanOperations, payers, user } from "@/db/schema";
 import { db } from "@/shared/lib/db";
@@ -111,11 +113,15 @@ describe("consultas financeiras de loans", () => {
 	it("mantém isolamento entre usuários", async () => {
 		const { userId: userA, institutionId: institutionA } =
 			await seedLoanTestData();
+		const suffix = randomUUID();
+		const userB = `loan-test-user-b-${suffix}`;
+		const institutionB = `loan-institution-test-b-${suffix}`;
+		const payerB = randomUUID();
 
 		await db.insert(user).values({
-			id: "loan-test-user-b",
+			id: userB,
 			name: "Loan Test User B",
-			email: "loan-test-b@example.com",
+			email: `loan-test-b-${suffix}@example.com`,
 			emailVerified: true,
 			image: null,
 			createdAt: new Date("2025-01-01T00:00:00.000Z"),
@@ -123,7 +129,7 @@ describe("consultas financeiras de loans", () => {
 		});
 
 		await db.insert(payers).values({
-			id: "22222222-2222-4222-8222-222222222222",
+			id: payerB,
 			name: "Pessoa B",
 			email: null,
 			avatarUrl: null,
@@ -131,17 +137,17 @@ describe("consultas financeiras de loans", () => {
 			note: null,
 			role: "admin",
 			isAutoSend: false,
-			shareCode: "loan-test-share-code-b",
+			shareCode: `loan-test-share-code-b-${suffix}`,
 			lastMailAt: null,
-			userId: "loan-test-user-b",
+			userId: userB,
 		});
 
 		await db.insert(institutions).values({
-			id: "loan-institution-test-b",
+			id: institutionB,
 			name: "Banco Teste B",
 			type: "bank",
 			description: null,
-			userId: "loan-test-user-b",
+			userId: userB,
 		});
 
 		await insertLoanOperation({
@@ -156,7 +162,7 @@ describe("consultas financeiras de loans", () => {
 		});
 
 		await db.insert(loanOperations).values({
-			institutionId: "loan-institution-test-b",
+			institutionId: institutionB,
 			loanType: "revolving",
 			principalBorrowed: formatDecimalForDbRequired(4000),
 			amountReceived: formatDecimalForDbRequired(4000),
@@ -170,7 +176,7 @@ describe("consultas financeiras de loans", () => {
 			currentInstallment: 1,
 			totalInstallments: 12,
 			status: "active",
-			userId: "loan-test-user-b",
+			userId: userB,
 		});
 
 		const summaryA = await fetchLoanSummaryForUser(userA);

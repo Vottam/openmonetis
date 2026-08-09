@@ -31,11 +31,19 @@ const TEST_USER = {
 	updatedAt: new Date("2025-01-01T00:00:00.000Z"),
 };
 
+const loanTestContext = globalThis as typeof globalThis & {
+	__loanTestUser?: typeof TEST_USER;
+};
+
+const getLoanTestUser = () => loanTestContext.__loanTestUser ?? TEST_USER;
+
+loanTestContext.__loanTestUser = TEST_USER;
+
 vi.mock("@/shared/lib/auth/server", () => ({
-	getUser: vi.fn(async () => TEST_USER),
-	getUserId: vi.fn(async () => TEST_USER.id),
-	getUserSession: vi.fn(async () => ({ user: TEST_USER })),
-	getOptionalUserSession: vi.fn(async () => ({ user: TEST_USER })),
+	getUser: vi.fn(async () => getLoanTestUser()),
+	getUserId: vi.fn(async () => getLoanTestUser().id),
+	getUserSession: vi.fn(async () => ({ user: getLoanTestUser() })),
+	getOptionalUserSession: vi.fn(async () => ({ user: getLoanTestUser() })),
 }));
 
 vi.mock("next/cache", () => ({

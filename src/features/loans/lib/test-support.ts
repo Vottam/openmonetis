@@ -1,18 +1,26 @@
+import { randomUUID } from "node:crypto";
+
 import { institutions, payers, user } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 
-export const LOAN_TEST_USER = {
-	id: "loan-test-user",
-	name: "Loan Test User",
-	email: "loan-test@example.com",
-	emailVerified: true,
-	image: null,
-	createdAt: new Date("2025-01-01T00:00:00.000Z"),
-	updatedAt: new Date("2025-01-01T00:00:00.000Z"),
-};
+function createLoanSeedData() {
+	const suffix = randomUUID();
 
-export const LOAN_TEST_PAYER_ID = "11111111-1111-4111-8111-111111111111";
-export const LOAN_TEST_INSTITUTION_ID = "loan-institution-test";
+	return {
+		user: {
+			id: `loan-test-user-${suffix}`,
+			name: "Loan Test User",
+			email: `loan-test-${suffix}@example.com`,
+			emailVerified: true,
+			image: null,
+			createdAt: new Date("2025-01-01T00:00:00.000Z"),
+			updatedAt: new Date("2025-01-01T00:00:00.000Z"),
+		},
+		payerId: randomUUID(),
+		institutionId: `loan-institution-${suffix}`,
+		shareCode: `loan-test-share-code-${suffix}`,
+	};
+}
 
 export async function resetLoanTestData() {
 	await db.execute(
@@ -21,12 +29,14 @@ export async function resetLoanTestData() {
 }
 
 export async function seedLoanTestData() {
-	await resetLoanTestData();
+	const seed = createLoanSeedData();
+	const loanTestContext = globalThis as { __loanTestUser?: typeof seed.user };
+	loanTestContext.__loanTestUser = seed.user;
 
-	await db.insert(user).values(LOAN_TEST_USER);
+	await db.insert(user).values(seed.user);
 
 	await db.insert(payers).values({
-		id: LOAN_TEST_PAYER_ID,
+		id: seed.payerId,
 		name: "Pessoa Teste",
 		email: null,
 		avatarUrl: null,
@@ -34,22 +44,22 @@ export async function seedLoanTestData() {
 		note: null,
 		role: "admin",
 		isAutoSend: false,
-		shareCode: "loan-test-share-code",
+		shareCode: seed.shareCode,
 		lastMailAt: null,
-		userId: LOAN_TEST_USER.id,
+		userId: seed.user.id,
 	});
 
 	await db.insert(institutions).values({
-		id: LOAN_TEST_INSTITUTION_ID,
+		id: seed.institutionId,
 		name: "Banco Teste",
 		type: "bank",
 		description: "Instituição de teste",
-		userId: LOAN_TEST_USER.id,
+		userId: seed.user.id,
 	});
 
 	return {
-		userId: LOAN_TEST_USER.id,
-		payerId: LOAN_TEST_PAYER_ID,
-		institutionId: LOAN_TEST_INSTITUTION_ID,
+		userId: seed.user.id,
+		payerId: seed.payerId,
+		institutionId: seed.institutionId,
 	};
 }

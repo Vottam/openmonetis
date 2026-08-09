@@ -8,6 +8,7 @@ import {
 	RiCalendarEventLine,
 	RiFileChartLine,
 	RiGroupLine,
+	RiHandCoinLine,
 	RiPriceTag3Line,
 	RiSecurePaymentLine,
 	RiSparklingLine,
@@ -87,6 +88,13 @@ export const NAV_SECTIONS: NavSection[] = [
 				label: "Contas",
 				description: "Saldos e extratos bancários",
 				icon: <RiBankLine className="size-4" />,
+				iconClass: "text-primary",
+			},
+			{
+				href: "/dashboard/loans",
+				label: "Empréstimos",
+				description: "Créditos, parcelas e limites",
+				icon: <RiHandCoinLine className="size-4" />,
 				iconClass: "text-primary",
 			},
 			{
