@@ -1177,7 +1177,7 @@ export const loanOperations = pgTable("loan_operations", {
 	userId: text("user_id")
 		.notNull()
 		.references(() => user.id, { onDelete: "cascade" }),
-	payerId: text("payer_id").references(() => payers.id, {
+	payerId: uuid("payer_id").references(() => payers.id, {
 		onDelete: "set null",
 	}),
 	createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
@@ -1217,7 +1217,7 @@ export const loanInstallments = pgTable("loan_installments", {
 	userId: text("user_id")
 		.notNull()
 		.references(() => user.id, { onDelete: "cascade" }),
-	payerId: text("payer_id").references(() => payers.id, {
+	payerId: uuid("payer_id").references(() => payers.id, {
 		onDelete: "set null",
 	}),
 	createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
@@ -1250,7 +1250,7 @@ export const loanPayments = pgTable("loan_payments", {
 	userId: text("user_id")
 		.notNull()
 		.references(() => user.id, { onDelete: "cascade" }),
-	payerId: text("payer_id").references(() => payers.id, {
+	payerId: uuid("payer_id").references(() => payers.id, {
 		onDelete: "set null",
 	}),
 	createdAt: timestamp("created_at", { mode: "date", withTimezone: true })

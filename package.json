@@ -16,6 +16,8 @@
 		"db:migrate": "drizzle-kit migrate",
 		"db:push": "drizzle-kit push",
 		"db:studio": "drizzle-kit studio",
+		"test": "vitest run",
+		"test:watch": "vitest",
 		"postinstall": "cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdf.worker.min.mjs",
 		"docker:up": "docker compose up -d",
 		"//docker:up": "Sobe app (Docker Hub) + banco PostgreSQL em background",
@@ -108,6 +110,7 @@
 		"knip": "^6.22.0",
 		"tailwindcss": "4.3.0",
 		"tsx": "4.22.4",
-		"typescript": "6.0.3"
+		"typescript": "6.0.3",
+		"vitest": "^4.1.10"
 	}
 }

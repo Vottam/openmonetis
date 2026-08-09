@@ -23,7 +23,7 @@ CREATE TABLE "loan_installments" (
 	"paid_date" timestamp,
 	"status" text DEFAULT 'pending' NOT NULL,
 	"user_id" text NOT NULL,
-	"payer_id" text,
+	"payer_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -45,7 +45,7 @@ CREATE TABLE "loan_operations" (
 	"total_installments" smallint DEFAULT 1 NOT NULL,
 	"status" text DEFAULT 'active' NOT NULL,
 	"user_id" text NOT NULL,
-	"payer_id" text,
+	"payer_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -62,7 +62,7 @@ CREATE TABLE "loan_payments" (
 	"paid_at" timestamp with time zone,
 	"status" text DEFAULT 'paid' NOT NULL,
 	"user_id" text NOT NULL,
-	"payer_id" text,
+	"payer_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );

@@ -1,0 +1,36 @@
+name: openmonetis-test-db
+
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: openmonetis_postgres_test
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-openmonetis}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openmonetis_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-openmonetis_db}
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
+      PGDATA: /var/lib/postgresql/data
+    command:
+      - postgres
+      - -c
+      - listen_addresses=127.0.0.1
+      - -c
+      - port=55432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -h 127.0.0.1 -p 55432 -U ${POSTGRES_USER:-openmonetis} -d ${POSTGRES_DB:-openmonetis_db}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  postgres_data:
+    driver: local
