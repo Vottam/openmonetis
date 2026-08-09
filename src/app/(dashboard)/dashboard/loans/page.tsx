@@ -1,14 +1,27 @@
 import { connection } from "next/server";
-import LoansPage from "@/features/loans/page";
+import { buildLoanDashboardData } from "@/features/loans/lib/dashboard";
+import { LoansPage } from "@/features/loans/page";
+import {
+	fetchInstitutionsForUser,
+	fetchLoanAccountDetails,
+} from "@/features/loans/queries";
 import { getUserId } from "@/shared/lib/auth/server";
 
 export default async function Page() {
 	await connection();
-	await getUserId();
+	const userId = await getUserId();
 
-	return (
-		<main className="flex flex-col gap-6">
-			<LoansPage />
-		</main>
-	);
+	const [institutions, loanData] = await Promise.all([
+		fetchInstitutionsForUser(userId),
+		fetchLoanAccountDetails(userId),
+	]);
+
+	const dashboard = buildLoanDashboardData({
+		institutions,
+		operations: loanData.operations,
+		installments: loanData.installments,
+		payments: loanData.payments,
+	});
+
+	return <LoansPage dashboard={dashboard} />;
 }

@@ -94,6 +94,7 @@ function mapLoanOperation(row: {
 
 function mapInstallment(row: {
 	id: string;
+	loanOperationId: string;
 	installmentNumber: number;
 	dueDate: string | Date;
 	expectedValue: unknown;
@@ -108,6 +109,7 @@ function mapInstallment(row: {
 }): Installment {
 	return {
 		id: row.id,
+		loanOperationId: row.loanOperationId,
 		installmentNumber: row.installmentNumber,
 		dueDate: toDateString(row.dueDate),
 		expectedValue: toNumber(row.expectedValue),
@@ -124,6 +126,7 @@ function mapInstallment(row: {
 
 function mapPayment(row: {
 	id: string;
+	loanOperationId: string;
 	installmentId: string | null;
 	installmentNumber: number;
 	amount: unknown;
@@ -135,6 +138,7 @@ function mapPayment(row: {
 }): Payment {
 	return {
 		id: row.id,
+		loanOperationId: row.loanOperationId,
 		installmentId: row.installmentId ?? "",
 		installmentNumber: row.installmentNumber,
 		amount: toNumber(row.amount),
@@ -270,6 +274,7 @@ export async function fetchInstallmentsForLoanOperation(
 	const rows = await db
 		.select({
 			id: loanInstallments.id,
+			loanOperationId: loanInstallments.loanOperationId,
 			installmentNumber: loanInstallments.installmentNumber,
 			dueDate: loanInstallments.dueDate,
 			expectedValue: loanInstallments.expectedValue,
@@ -301,6 +306,7 @@ export async function fetchPaymentsForLoanOperation(
 	const rows = await db
 		.select({
 			id: loanPayments.id,
+			loanOperationId: loanPayments.loanOperationId,
 			installmentId: loanPayments.installmentId,
 			installmentNumber: loanPayments.installmentNumber,
 			amount: loanPayments.amount,

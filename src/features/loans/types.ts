@@ -35,7 +35,7 @@ export type LoanInstitution = {
 
 export type LoanType = "revolving" | "fixed";
 
-export type LoanStatus = "active" | "paid" | "closed";
+export type LoanStatus = "active" | "paid" | "overdue" | "cancelled";
 
 export type LoanPeriod = "monthly" | "biweekly" | "weekly";
 
@@ -81,6 +81,7 @@ export type LoanSummary = {
 
 export type Installment = {
 	id: string;
+	loanOperationId: string;
 	installmentNumber: number;
 	dueDate: string; // YYYY-MM-DD
 	expectedValue: number; // valor previsto da parcela
@@ -96,6 +97,7 @@ export type Installment = {
 
 export type Payment = {
 	id: string;
+	loanOperationId: string;
 	installmentId: string;
 	installmentNumber: number;
 	amount: number;
@@ -122,7 +124,7 @@ export type LoanOperation = {
 	nextDueDate: string;
 	currentInstallment: number;
 	totalInstallments: number;
-	status: "active" | "paid" | "closed";
+	status: "active" | "paid" | "overdue" | "cancelled";
 	createdAt: string;
 	updatedAt: string;
 };

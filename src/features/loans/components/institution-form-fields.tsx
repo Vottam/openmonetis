@@ -26,10 +26,8 @@ export function InstitutionFormFields({
 	onChange,
 }: InstitutionFormFieldsProps) {
 	const INSTITUTION_TYPES = [
-		"Banco",
-		"Financeira",
-		"Fintech",
-		"Outros",
+		{ value: "bank", label: "Banco" },
+		{ value: "other", label: "Outros" },
 	] as const;
 
 	return (
@@ -53,13 +51,14 @@ export function InstitutionFormFields({
 				>
 					<SelectTrigger id="institution-type" className="w-full">
 						<SelectValue placeholder="Selecione o tipo">
-							{values.type}
+							{INSTITUTION_TYPES.find((type) => type.value === values.type)
+								?.label ?? values.type}
 						</SelectValue>
 					</SelectTrigger>
 					<SelectContent>
 						{INSTITUTION_TYPES.map((type) => (
-							<SelectItem key={type} value={type}>
-								{type}
+							<SelectItem key={type.value} value={type.value}>
+								{type.label}
 							</SelectItem>
 						))}
 					</SelectContent>

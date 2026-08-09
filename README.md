@@ -556,7 +556,7 @@ openmonetis/
 │   │   ├── accounts/              # Contas bancárias
 │   │   ├── categories/            # Categorias e histórico
 │   │   ├── budgets/               # Orçamentos
-│   │   ├── loans/                 # Empréstimos, parcelas e limites
+│   │   ├── loans/                 # Empréstimos, parcelas, limites e pagamentos
 │   │   ├── payers/                # Pagadores e compartilhamento
 │   │   ├── inbox/                 # Pré-lançamentos do Companion
 │   │   ├── insights/              # Análises com IA

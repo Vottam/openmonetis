@@ -1,7 +1,13 @@
-// @ts-nocheck
 "use client";
 
-import { RiBankLine, RiDeleteLine } from "@remixicon/react";
+import {
+	RiBankLine,
+	RiMoneyDollarCircleLine,
+	RiRefundLine,
+	RiTimeLine,
+} from "@remixicon/react";
+import type { ReactNode } from "react";
+import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import {
 	Card,
@@ -10,183 +16,234 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/shared/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/shared/components/ui/tabs";
 import { formatCurrency } from "@/shared/utils/currency";
-import type { LoanAccount } from "./types";
+import { formatDate } from "@/shared/utils/date";
+import { cn } from "@/shared/utils/ui";
 
-// ==================== Account Card ====================
+import type { LoanDashboardAccount } from "../lib/dashboard";
 
-export function LoanAccountCard({
-	account,
-	onView,
-	onEdit,
-	onDelete,
+function getLoanKindLabel(loanType: LoanDashboardAccount["loanType"]) {
+	return loanType === "revolving" ? "CRÉDITO ROTATIVO" : "EMPRÉSTIMO FIXO";
+}
+
+function getStatusLabel(account: LoanDashboardAccount) {
+	if (account.summary.status === "paid") {
+		return "Quitado";
+	}
+
+	if (account.summary.status === "overdue") {
+		return "Em atraso";
+	}
+
+	if (account.summary.status === "cancelled") {
+		return "Cancelado";
+	}
+
+	return "Ativo";
+}
+
+function Metric({
+	label,
+	value,
+	description,
 }: {
-	account: LoanAccount;
-	onView?: () => void;
-	onEdit?: () => void;
-	onDelete?: () => void;
+	label: string;
+	value: string;
+	description?: string;
 }) {
-	const summary = account.summary;
-	const totalInstallments = account.installments.length;
-	const paidInstallments = account.installments.filter((i) => i.paid).length;
+	return (
+		<div className="rounded-xl border bg-muted/20 p-3">
+			<div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+				{label}
+			</div>
+			<div className="mt-1 text-base font-semibold text-foreground">
+				{value}
+			</div>
+			{description ? (
+				<div className="mt-1 text-xs text-muted-foreground">{description}</div>
+			) : null}
+		</div>
+	);
+}
+
+function SummaryValue({
+	label,
+	value,
+	icon,
+}: {
+	label: string;
+	value: string;
+	icon?: ReactNode;
+}) {
+	return (
+		<div className="rounded-xl border bg-card p-3 shadow-sm">
+			<div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+				{icon}
+				<span>{label}</span>
+			</div>
+			<div className="mt-2 text-lg font-semibold text-foreground">{value}</div>
+		</div>
+	);
+}
+
+export function LoanCard({
+	account,
+	selected = false,
+	onSelect,
+	onCreateOperation,
+}: {
+	account: LoanDashboardAccount;
+	selected?: boolean;
+	onSelect?: () => void;
+	onCreateOperation?: () => void;
+}) {
+	const balanceDue = Math.max(
+		0,
+		account.summary.totalPayable - account.summary.totalPaid,
+	);
 
 	return (
-		<Card className="shadow-sm hover:shadow-md transition-shadow">
-			<CardHeader>
-				<div className="flex items-center justify-between flex-wrap gap-2">
-					<div className="flex items-center gap-2">
-						<RiBankLine className="size-5 text-primary" />
-						<CardTitle className="font-semibold">
-							{account.institutionName}
-						</CardTitle>
+		<Card
+			className={cn(
+				"overflow-hidden border bg-card/80 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md",
+				selected && "border-primary/50 ring-2 ring-primary/20 shadow-md",
+			)}
+		>
+			<CardHeader className="space-y-4">
+				<div className="flex flex-wrap items-start justify-between gap-3">
+					<div className="space-y-1">
+						<div className="flex items-center gap-2">
+							<RiBankLine className="size-5 text-primary" />
+							<CardTitle className="text-base font-semibold">
+								{account.institutionName}
+							</CardTitle>
+						</div>
+						<CardDescription className="text-sm text-muted-foreground">
+							{account.institution.type === "bank" ? "Banco" : "Outros"}
+							{account.institution.description
+								? ` · ${account.institution.description}`
+								: ""}
+						</CardDescription>
 					</div>
-					<div className="flex gap-2">
-						<Tabs value={account.loanType} onValueChange={() => {}}>
-							<TabsList>
-								<TabsTrigger value="revolving">Crédito Rotativo</TabsTrigger>
-								<TabsTrigger value="fixed">Empréstimo Fixo</TabsTrigger>
-							</TabsList>
-						</Tabs>
+					<div className="flex flex-col items-end gap-2">
+						<Badge
+							variant={account.loanType === "revolving" ? "info" : "secondary"}
+						>
+							{getLoanKindLabel(account.loanType)}
+						</Badge>
+						<Badge
+							variant={
+								account.summary.status === "overdue"
+									? "destructive"
+									: account.summary.status === "paid"
+										? "success"
+										: account.summary.status === "cancelled"
+											? "outline"
+											: "default"
+							}
+						>
+							{getStatusLabel(account)}
+						</Badge>
 					</div>
 				</div>
-				<CardDescription>
-					{account.loanType === "revolving"
-						? "Linha de crédito rotativa"
-						: "Empréstimo fixo"}
-				</CardDescription>
+
+				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+					{account.loanType === "revolving" ? (
+						<>
+							<Metric
+								label="Limite total"
+								value={formatCurrency(account.summary.limit)}
+								description="Crédito concedido à linha"
+							/>
+							<Metric
+								label="Disponível"
+								value={formatCurrency(account.summary.available)}
+								description="Recomposto apenas pelo principal amortizado"
+							/>
+							<Metric
+								label="Utilizado"
+								value={formatCurrency(account.summary.utilized)}
+								description="Principal atualmente em aberto"
+							/>
+							<Metric
+								label="Saldo a pagar"
+								value={formatCurrency(balanceDue)}
+								description="Principal + juros + encargos restantes"
+							/>
+						</>
+					) : (
+						<>
+							<Metric
+								label="Valor recebido"
+								value={formatCurrency(account.summary.amountReceived)}
+								description="Valor líquido efetivamente disponibilizado"
+							/>
+							<Metric
+								label="Total contratado"
+								value={formatCurrency(account.summary.totalContracted)}
+								description="Montante do empréstimo contratado"
+							/>
+							<Metric
+								label="Já pago"
+								value={formatCurrency(account.summary.totalPaid)}
+								description="Pagamentos já registrados"
+							/>
+							<Metric
+								label="Saldo a pagar"
+								value={formatCurrency(balanceDue)}
+								description="Dívida total remanescente"
+							/>
+						</>
+					)}
+				</div>
+
+				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					<SummaryValue
+						label="Próximo vencimento"
+						value={formatDate(account.summary.nextDueDate)}
+						icon={<RiTimeLine className="size-4" />}
+					/>
+					<SummaryValue
+						label="Parcelas"
+						value={`${account.summary.paidInstallmentCount} / ${account.summary.installmentCount}`}
+						icon={<RiRefundLine className="size-4" />}
+					/>
+					<SummaryValue
+						label="Pagamentos"
+						value={formatCurrency(account.summary.totalPaid)}
+						icon={<RiMoneyDollarCircleLine className="size-4" />}
+					/>
+				</div>
 			</CardHeader>
 
-			<CardContent>
-				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-					<div>
-						<span className="text-xs text-gray-500">Limite concedido</span>
-						<p className="text-lg font-semibold">
-							{formatCurrency(summary.limit)}
-						</p>
-					</div>
-					<div>
-						<span className="text-xs text-gray-500">Disponível</span>
-						<p className="text-lg font-semibold">
-							{formatCurrency(summary.available)}
-						</p>
-					</div>
-					<div>
-						<span className="text-xs text-gray-500">Utilizado</span>
-						<p className="text-lg font-semibold">
-							{formatCurrency(summary.utilized)}
-						</p>
-					</div>
-					<div>
-						<span className="text-xs text-gray-500">A pagar</span>
-						<p className="text-lg font-semibold">
-							{formatCurrency(summary.totalPayable)}
-						</p>
-					</div>
-					<div>
-						<span className="text-xs text-gray-500">Principal restante</span>
-						<p className="text-lg font-semibold">
-							{formatCurrency(summary.remainingPrincipal)}
-						</p>
-					</div>
-					<div>
-						<span className="text-xs text-gray-500">Juros restantes</span>
-						<p className="text-lg font-semibold">
-							{formatCurrency(summary.remainingInterest)}
-						</p>
-					</div>
-					<div>
-						<span className="text-xs text-gray-500">Encargos restantes</span>
-						<p className="text-lg font-semibold">
-							{formatCurrency(summary.remainingCharge)}
-						</p>
-					</div>
-					<div>
-						<span className="text-xs text-gray-500">Parcelas</span>
-						<p className="text-lg font-semibold">
-							{totalInstallments} / {account.summary.totalInstallments}
-						</p>
-					</div>
-					<div>
-						<span className="text-xs text-gray-500">Parcelas pagas</span>
-						<p className="text-lg font-semibold">
-							{paidInstallments} / {totalInstallments}
-						</p>
-					</div>
+			<CardContent className="pt-0">
+				<div className="flex flex-col gap-2 border-t pt-4 sm:flex-row">
+					<Button
+						type="button"
+						variant={selected ? "default" : "outline"}
+						onClick={onSelect}
+						className="w-full sm:w-auto"
+					>
+						Ver detalhes
+					</Button>
+					<Button
+						type="button"
+						onClick={onCreateOperation}
+						className="w-full sm:w-auto"
+					>
+						Nova operação
+					</Button>
 				</div>
 			</CardContent>
-
-			<div className="border-t border-gray-200 p-3 flex gap-2">
-				<Button size="sm" onClick={() => onView?.()} className="flex-1">
-					Ver detalhes
-				</Button>
-				{onEdit && (
-					<Button size="sm" variant="outline" onClick={onEdit}>
-						Editar
-					</Button>
-				)}
-				{onDelete && (
-					<Button size="sm" variant="destructive" onClick={() => onDelete?.()}>
-						Remover
-					</Button>
-				)}
-			</div>
 		</Card>
 	);
 }
 
-// ==================== Loan Card ====================
-
-export function LoanCard({
-	account,
-	onView,
-	onDelete,
-}: {
-	account: LoanAccount;
-	onView?: () => void;
-	onDelete?: () => void;
+export function LoanAccountCard(props: {
+	account: LoanDashboardAccount;
+	selected?: boolean;
+	onSelect?: () => void;
+	onCreateOperation?: () => void;
 }) {
-	return (
-		<Card className="shadow-sm hover:shadow-md transition-shadow">
-			<CardHeader>
-				<div className="flex items-center justify-between">
-					<div className="flex items-center gap-2">
-						<RiBankLine className="size-5 text-primary" />
-						<CardTitle className="font-semibold">
-							{account.institutionName}
-						</CardTitle>
-					</div>
-					<Button size="sm" onClick={() => onView?.()} className="flex-1">
-						Ver detalhes
-					</Button>
-				</div>
-			</CardHeader>
-
-			<CardContent>
-				<div className="flex justify-between text-sm">
-					<span className="text-gray-500">Tipo</span>
-					<span>
-						{account.loanType === "revolving"
-							? "Crédito Rotativo"
-							: "Empréstimo Fixo"}
-					</span>
-				</div>
-				<div className="flex justify-between text-sm">
-					<span className="text-gray-500">Estado</span>
-					<span>{account.loanStatus}</span>
-				</div>
-				<div className="flex justify-between text-sm">
-					<span className="text-gray-500">A pagar</span>
-					<span className="font-medium">
-						{formatCurrency(account.summary.totalPayable)}
-					</span>
-				</div>
-			</CardContent>
-
-			<Button size="sm" variant="destructive" onClick={() => onDelete?.()}>
-				<RiDeleteLine className="size-4 mr-1" />
-				Remover
-			</Button>
-		</Card>
-	);
+	return <LoanCard {...props} />;
 }
