@@ -18,6 +18,7 @@ export type LoanInstallmentDraft = {
 	expectedValue: number;
 	expectedPrincipal: number;
 	expectedInterest: number;
+	expectedCharge: number;
 };
 
 export type LoanDashboardSummary = {
@@ -168,35 +169,67 @@ export function buildLoanInstallmentPlan(params: {
 	firstDueDate: Date;
 }): LoanInstallmentDraft[] {
 	const count = Math.max(1, Math.trunc(params.totalInstallments));
-	const principalSplit = splitAmount(params.principalBorrowed, count);
-	const interestSplit = splitAmount(params.totalInterest, count);
-	const chargeSplit = splitAmount(params.totalCharge, count);
-	const totalSplit = splitAmount(params.totalPayable, count);
+
+	// 1. Distribuir totalPayable uniformemente em centavos inteiros
+	// entre N parcelas (base + resto), garantindo soma exata = totalPayableCents.
+	const totalPayableCents = Math.round(params.totalPayable * 100);
+	const baseValueCents = Math.floor(totalPayableCents / count);
+	const remainderValueCents = totalPayableCents % count;
+
+	// 2. Distribuir principal proporcionalmente aos expectedValue de cada parcela.
+	// Usa algoritmo de apportionment cumulativo para garantir soma exata = principalCents.
+	const principalCents = Math.round(params.principalBorrowed * 100);
+	const chargeCents = Math.round(params.totalCharge * 100);
+
+	// Distribuir expectedValue uniforme (base + resto) entre parcelas
+	const expectedValueCents = Array.from(
+		{ length: count },
+		(_, i) => baseValueCents + (i < remainderValueCents ? 1 : 0),
+	);
+
+	// Função auxiliar para distribuir um total proporcionalmente a um vetor de pesos
+	function apportion(total: number, weights: number[]): number[] {
+		const n = weights.length;
+		const sumWeights = weights.reduce((a, b) => a + b, 0);
+		if (sumWeights === 0) return Array(n).fill(0);
+
+		const exact: number[] = weights.map((w) => (w * total) / sumWeights);
+		const floored: number[] = exact.map((e) => Math.floor(e));
+		const allocated = floored.reduce((a, b) => a + b, 0);
+		const remainder = total - allocated;
+
+		// Distribuir o resto (+1) para as parcelas com maiores partes fracionárias
+		const fractions = exact.map((e, i) => ({ index: i, frac: e - floored[i] }));
+		fractions.sort((a, b) => b.frac - a.frac);
+		for (let i = 0; i < remainder; i++) {
+			floored[fractions[i].index]++;
+		}
+		return floored;
+	}
+
+	// Distribuir principal proporcionalmente aos expectedValue
+	const principalSplit = apportion(principalCents, expectedValueCents);
+
+	// Distribuir charge proporcionalmente ao espaço restante
+	// (expectedValue - principal, que é exatamente o espaço para charge)
+	const chargeCapacity = expectedValueCents.map(
+		(ev, i) => ev - principalSplit[i],
+	);
+	const chargeSplit = apportion(chargeCents, chargeCapacity);
+
+	// Interest é o residual exato: installmentTotal - principal - charge
+	const interestSplit = expectedValueCents.map(
+		(ev, i) => ev - principalSplit[i] - chargeSplit[i],
+	);
 
 	return Array.from({ length: count }, (_, index) => ({
 		installmentNumber: index + 1,
 		dueDate: addMonthsToDate(params.firstDueDate, index),
-		expectedValue: clampMoney(
-			totalSplit[index] ??
-				(principalSplit[index] ?? 0) +
-					(interestSplit[index] ?? 0) +
-					(chargeSplit[index] ?? 0),
-		),
-		expectedPrincipal: clampMoney(principalSplit[index] ?? 0),
-		expectedInterest: clampMoney(interestSplit[index] ?? 0),
+		expectedValue: expectedValueCents[index] / 100,
+		expectedPrincipal: principalSplit[index] / 100,
+		expectedInterest: interestSplit[index] / 100,
+		expectedCharge: chargeSplit[index] / 100,
 	}));
-}
-
-function splitAmount(total: number, parts: number): number[] {
-	const safeParts = Math.max(1, Math.trunc(parts));
-	const cents = Math.round(total * 100);
-	const base = Math.floor(cents / safeParts);
-	const remainder = cents % safeParts;
-
-	return Array.from(
-		{ length: safeParts },
-		(_, index) => (index < remainder ? base + 1 : base) / 100,
-	);
 }
 
 export function buildLoanDashboardData(
