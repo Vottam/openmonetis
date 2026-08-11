@@ -4,8 +4,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { institutions, loanOperations, payers, user } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
+import { buildLoanDashboardData } from "./lib/dashboard";
 import { seedLoanTestData } from "./lib/test-support";
-import { fetchLoanBalance, fetchLoanSummaryForUser } from "./queries";
+import {
+	fetchInstitutionsForUser,
+	fetchLoanAccountDetails,
+	fetchLoanBalance,
+	fetchLoanSummaryForUser,
+} from "./queries";
 
 function loanDates() {
 	return {
@@ -51,6 +57,39 @@ async function insertLoanOperation(params: {
 describe("consultas financeiras de loans", () => {
 	beforeEach(async () => {
 		await seedLoanTestData();
+	});
+
+	it("exibe total contratado do empréstimo fixo a partir do total devido", async () => {
+		const { userId, institutionId } = await seedLoanTestData();
+
+		await insertLoanOperation({
+			userId,
+			institutionId,
+			principalBorrowed: 2000,
+			totalContracted: 10000,
+			totalInterest: 1000,
+			totalCharge: 0,
+			totalPayable: 3000,
+			loanType: "fixed",
+		});
+
+		const institutionsForUser = await fetchInstitutionsForUser(userId);
+		const loanData = await fetchLoanAccountDetails(userId, [institutionId]);
+		const dashboard = buildLoanDashboardData({
+			institutions: institutionsForUser,
+			operations: loanData.operations,
+			installments: loanData.installments,
+			payments: loanData.payments,
+		});
+
+		const account = dashboard.accounts.find(
+			(item) =>
+				item.institutionId === institutionId && item.loanType === "fixed",
+		);
+
+		expect(account).toBeDefined();
+		expect(Number(account?.summary.totalContracted)).toBe(3000);
+		expect(Number(account?.operations[0].totalContracted)).toBe(3000);
 	});
 
 	it("mantém o limite disponível do rotativo e ignora juros na recomposição do limite", async () => {

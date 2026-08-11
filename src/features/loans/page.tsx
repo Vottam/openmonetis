@@ -7,6 +7,7 @@ import {
 	RiMoneyDollarCircleLine,
 	RiRefundLine,
 } from "@remixicon/react";
+import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/shared/components/feedback/empty-state";
 import { Badge } from "@/shared/components/ui/badge";
@@ -109,6 +110,7 @@ function LoansGroupSection({
 }
 
 export function LoansPage({ dashboard }: { dashboard: LoanDashboardData }) {
+	const router = useRouter();
 	const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
 		dashboard.defaultAccountId,
 	);
@@ -193,7 +195,7 @@ export function LoansPage({ dashboard }: { dashboard: LoanDashboardData }) {
 						onOpenChange={setInstitutionDialogOpen}
 						onSuccess={() => {
 							setInstitutionDialogOpen(false);
-							window.location.reload();
+							router.refresh();
 						}}
 						trigger={
 							<Button type="button" variant="outline">
@@ -306,7 +308,7 @@ export function LoansPage({ dashboard }: { dashboard: LoanDashboardData }) {
 				onOpenChange={setOperationDialogOpen}
 				onSuccess={() => {
 					setOperationDialogOpen(false);
-					window.location.reload();
+					router.refresh();
 				}}
 				institutions={dashboard.institutions}
 				defaultInstitutionId={operationDefaults.institutionId ?? undefined}
@@ -319,7 +321,7 @@ export function LoansPage({ dashboard }: { dashboard: LoanDashboardData }) {
 				onOpenChange={setPaymentDialogOpen}
 				onSuccess={() => {
 					setPaymentDialogOpen(false);
-					window.location.reload();
+					router.refresh();
 				}}
 				account={selectedAccount}
 				installmentId={paymentTarget?.installmentId ?? undefined}

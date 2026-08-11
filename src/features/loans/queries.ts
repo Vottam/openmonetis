@@ -70,6 +70,11 @@ function mapLoanOperation(row: {
 	createdAt: Date;
 	updatedAt: Date;
 }): LoanOperation {
+	const totalContracted =
+		row.loanType === "fixed"
+			? toNumber(row.totalPayable)
+			: toNumber(row.totalContracted);
+
 	return {
 		id: row.id,
 		loanId: row.id,
@@ -77,7 +82,7 @@ function mapLoanOperation(row: {
 		loanType: row.loanType as LoanType,
 		principalBorrowed: toNumber(row.principalBorrowed),
 		amountReceived: toNumber(row.amountReceived),
-		totalContracted: toNumber(row.totalContracted),
+		totalContracted,
 		totalInterest: toNumber(row.totalInterest),
 		totalCharge: toNumber(row.totalCharge),
 		totalPayable: toNumber(row.totalPayable),
