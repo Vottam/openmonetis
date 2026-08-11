@@ -28,6 +28,7 @@ import { formatCurrency, normalizeDecimalInput } from "@/shared/utils/currency";
 import { formatDate, toDateOnlyString } from "@/shared/utils/date";
 
 import type { LoanDashboardAccount } from "../lib/dashboard";
+import { allocatePaymentComponents } from "../lib/payment-allocation";
 
 type LoanPaymentFormValues = {
 	installmentId: string;
@@ -187,9 +188,6 @@ export function LoanPaymentDialog({
 		}
 
 		const amount = parseDecimal(formState.amount);
-		const principalPaid = parseDecimal(formState.principalPaid);
-		const interestPaid = parseDecimal(formState.interestPaid);
-		const chargePaid = parseDecimal(formState.chargePaid);
 		const paidAt = formState.paidAt
 			? new Date(`${formState.paidAt}T00:00:00.000Z`)
 			: null;
@@ -204,28 +202,33 @@ export function LoanPaymentDialog({
 			return;
 		}
 
-		if (amount < principalPaid + interestPaid + chargePaid - 0.005) {
-			toast.error(
-				"O valor pago precisa cobrir principal, juros e encargos informados.",
-			);
+		if (!summary) {
+			toast.error("Selecione uma parcela válida.");
 			return;
 		}
 
-		if (summary && amount > summary.remainingValue + 0.005) {
+		if (amount > summary.remainingValue + 0.005) {
 			toast.error(
 				"O pagamento não pode ser maior que o saldo restante da parcela.",
 			);
 			return;
 		}
 
+		const allocation = allocatePaymentComponents({
+			amount,
+			remainingPrincipal: summary.remainingPrincipal,
+			remainingInterest: summary.remainingInterest,
+			remainingCharge: summary.remainingCharge,
+		});
+
 		startTransition(async () => {
 			try {
 				const result = await recordPaymentAction({
 					installmentId: formState.installmentId,
-					amount,
-					principalPaid,
-					interestPaid,
-					chargePaid,
+					amount: allocation.amount,
+					principalPaid: allocation.principalPaid,
+					interestPaid: allocation.interestPaid,
+					chargePaid: allocation.chargePaid,
 					paidAt,
 					status: formState.status,
 				});

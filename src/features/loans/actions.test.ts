@@ -161,6 +161,64 @@ describe("ações de loans", () => {
 		expect(Number(payment.amount)).toBe(400);
 	});
 
+	it("reconcilia pagamento integral com os componentes exatos da parcela", async () => {
+		const { institutionId } = await seedLoanTestData();
+		const op = await createLoanOperationAction(
+			baseOperationInput(institutionId),
+		);
+		const loanOperationId = assertDefined(
+			op.loanOperationId,
+			"loanOperationId ausente",
+		);
+		const installment = await createInstallmentAction({
+			loanOperationId,
+			installmentNumber: 1,
+			dueDate: new Date("2025-02-15T00:00:00.000Z"),
+			expectedValue: 250,
+			expectedPrincipal: 166.67,
+			expectedInterest: 83.33,
+			status: "pending",
+		});
+
+		const payment = await recordPaymentAction({
+			installmentId: assertDefined(
+				installment.installmentId,
+				"installmentId ausente",
+			),
+			amount: 250,
+			principalPaid: 166.66,
+			interestPaid: 83.33,
+			chargePaid: 0,
+			paidAt: new Date("2025-02-15T00:00:00.000Z"),
+			status: "paid",
+		});
+
+		expect(payment.success).toBe(true);
+
+		const [storedPayment] = await db
+			.select()
+			.from(loanPayments)
+			.where(
+				eq(
+					loanPayments.installmentId,
+					assertDefined(installment.installmentId, "installmentId ausente"),
+				),
+			);
+
+		expect(Number(storedPayment.amount)).toBe(250);
+		expect(Number(storedPayment.principalPaid)).toBe(166.67);
+		expect(Number(storedPayment.interestPaid)).toBe(83.33);
+		expect(Number(storedPayment.chargePaid)).toBe(0);
+		expect(
+			Math.round(
+				(Number(storedPayment.principalPaid) +
+					Number(storedPayment.interestPaid) +
+					Number(storedPayment.chargePaid)) *
+					100,
+			),
+		).toBe(25000);
+	});
+
 	it("permite alterar o limite sem alterar o principal já aberto", async () => {
 		const { institutionId } = await seedLoanTestData();
 		const op = await createLoanOperationAction(

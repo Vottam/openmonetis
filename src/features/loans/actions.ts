@@ -14,6 +14,7 @@ import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import { toDateOnlyString } from "@/shared/utils/date";
+import { allocatePaymentComponents } from "./lib/payment-allocation";
 
 const dateLikeSchema = z
 	.union([z.date(), z.string()])
@@ -443,10 +444,40 @@ export async function recordPaymentAction(input: unknown) {
 			return { success: false, error: "Parcela não encontrada." };
 		}
 
-		const currentPaid = Number(installment.paidAmount ?? 0);
-		const nextPaid = currentPaid + data.amount;
+		const existingPayments = await db.query.loanPayments.findMany({
+			where: and(
+				eq(loanPayments.installmentId, installment.id),
+				eq(loanPayments.userId, user.id),
+			),
+		});
 
-		if (nextPaid > Number(installment.expectedValue ?? 0)) {
+		const paidCharge = existingPayments.reduce(
+			(sum, payment) => sum + Number(payment.chargePaid ?? 0),
+			0,
+		);
+		const remainingPrincipal =
+			Number(installment.expectedPrincipal ?? 0) -
+			Number(installment.paidPrincipal ?? 0);
+		const remainingInterest =
+			Number(installment.expectedInterest ?? 0) -
+			Number(installment.paidInterest ?? 0);
+		const remainingCharge = Math.max(
+			0,
+			Number(installment.expectedValue ?? 0) -
+				Number(installment.expectedPrincipal ?? 0) -
+				Number(installment.expectedInterest ?? 0) -
+				paidCharge,
+		);
+		const allocation = allocatePaymentComponents({
+			amount: data.amount,
+			remainingPrincipal,
+			remainingInterest,
+			remainingCharge,
+		});
+		const currentPaid = Number(installment.paidAmount ?? 0);
+		const nextPaid = currentPaid + allocation.amount;
+
+		if (nextPaid > Number(installment.expectedValue ?? 0) + 0.005) {
 			return {
 				success: false,
 				error:
@@ -460,10 +491,10 @@ export async function recordPaymentAction(input: unknown) {
 				loanOperationId: installment.loanOperationId,
 				installmentId: installment.id,
 				installmentNumber: installment.installmentNumber,
-				amount: formatDecimalForDbRequired(data.amount),
-				principalPaid: formatDecimalForDbRequired(data.principalPaid),
-				interestPaid: formatDecimalForDbRequired(data.interestPaid),
-				chargePaid: formatDecimalForDbRequired(data.chargePaid),
+				amount: formatDecimalForDbRequired(allocation.amount),
+				principalPaid: formatDecimalForDbRequired(allocation.principalPaid),
+				interestPaid: formatDecimalForDbRequired(allocation.interestPaid),
+				chargePaid: formatDecimalForDbRequired(allocation.chargePaid),
 				paidAt: data.paidAt,
 				status: data.status,
 				userId: user.id,
@@ -476,10 +507,10 @@ export async function recordPaymentAction(input: unknown) {
 				paid: data.status === "paid",
 				paidAmount: formatDecimalForDbRequired(nextPaid),
 				paidPrincipal: formatDecimalForDbRequired(
-					Number(installment.paidPrincipal ?? 0) + data.principalPaid,
+					Number(installment.paidPrincipal ?? 0) + allocation.principalPaid,
 				),
 				paidInterest: formatDecimalForDbRequired(
-					Number(installment.paidInterest ?? 0) + data.interestPaid,
+					Number(installment.paidInterest ?? 0) + allocation.interestPaid,
 				),
 				paidDate: data.paidAt,
 				status: data.status === "paid" ? "paid" : data.status,
