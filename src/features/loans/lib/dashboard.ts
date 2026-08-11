@@ -1,5 +1,6 @@
 import {
 	addMonthsToDate,
+	adjustDateToNextBusinessDay,
 	formatDateOnly,
 	toDateOnlyString,
 } from "@/shared/utils/date";
@@ -84,6 +85,8 @@ export type LoanInstitutionSummary = {
 	institution: LoanInstitution;
 	accountCount: number;
 	operationCount: number;
+	installmentCount: number;
+	paymentCount: number;
 	firstAccountId: string | null;
 };
 
@@ -231,7 +234,9 @@ export function buildLoanInstallmentPlan(params: {
 
 	return Array.from({ length: count }, (_, index) => ({
 		installmentNumber: index + 1,
-		dueDate: addMonthsToDate(params.firstDueDate, index),
+		dueDate: adjustDateToNextBusinessDay(
+			addMonthsToDate(params.firstDueDate, index),
+		),
 		expectedValue: expectedValueCents[index] / 100,
 		expectedPrincipal: principalSplit[index] / 100,
 		expectedInterest: interestSplit[index] / 100,
@@ -503,6 +508,14 @@ export function buildLoanInstitutionSummaries(source: {
 				accountCount: institutionAccounts.length,
 				operationCount: institutionAccounts.reduce(
 					(total, account) => total + account.operations.length,
+					0,
+				),
+				installmentCount: institutionAccounts.reduce(
+					(total, account) => total + account.installments.length,
+					0,
+				),
+				paymentCount: institutionAccounts.reduce(
+					(total, account) => total + account.payments.length,
 					0,
 				),
 				firstAccountId: institutionAccounts[0]?.id ?? null,

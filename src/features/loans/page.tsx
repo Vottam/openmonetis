@@ -9,6 +9,8 @@ import {
 } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import { EmptyState } from "@/shared/components/feedback/empty-state";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
@@ -19,7 +21,7 @@ import {
 	CardTitle,
 } from "@/shared/components/ui/card";
 import { formatCurrency } from "@/shared/utils/currency";
-
+import { deleteLoanInstitutionAction } from "./actions";
 import { LoanCard } from "./components/loan-card";
 import { LoanDetailPanel } from "./components/loan-detail";
 import { LoanInstitutionCard } from "./components/loan-institution-card";
@@ -30,6 +32,7 @@ import {
 	buildLoanInstitutionSummaries,
 	type LoanDashboardAccount,
 	type LoanDashboardData,
+	type LoanInstitutionSummary,
 } from "./lib/dashboard";
 
 function OverviewCard({
@@ -136,14 +139,12 @@ export function LoansPage({
 		accountId: string;
 		installmentId: string;
 	} | null>(null);
+	const [institutionToRemove, setInstitutionToRemove] =
+		useState<LoanInstitutionSummary | null>(null);
 
 	useEffect(() => {
 		if (!dashboard.accounts.length) {
 			setSelectedAccountId(null);
-			return;
-		}
-
-		if (selectedAccountId === null) {
 			return;
 		}
 
@@ -210,6 +211,39 @@ export function LoansPage({
 		setSelectedAccountId(accountId);
 		setPaymentTarget({ accountId, installmentId });
 		setPaymentDialogOpen(true);
+	};
+
+	const hasInstitutionChildren =
+		(institutionToRemove?.operationCount ?? 0) > 0 ||
+		(institutionToRemove?.installmentCount ?? 0) > 0 ||
+		(institutionToRemove?.paymentCount ?? 0) > 0;
+	const institutionRemovalTitle = institutionToRemove
+		? hasInstitutionChildren
+			? `Remover ${institutionToRemove.institution.name} e todos os dados associados?`
+			: `Remover ${institutionToRemove.institution.name}?`
+		: "Remover instituição?";
+	const institutionRemovalDescription = institutionToRemove
+		? hasInstitutionChildren
+			? `Esta ação removerá a instituição e todos os empréstimos, parcelas e pagamentos associados. Essa ação não pode ser desfeita. Serão excluídos ${institutionToRemove.operationCount} operação(ões), ${institutionToRemove.installmentCount} parcela(s) e ${institutionToRemove.paymentCount} pagamento(s).`
+			: "Essa ação removerá apenas a instituição. Essa ação não pode ser desfeita."
+		: undefined;
+
+	const handleConfirmInstitutionRemoval = async () => {
+		if (!institutionToRemove) return;
+
+		const result = await deleteLoanInstitutionAction({
+			id: institutionToRemove.institution.id,
+		});
+
+		if (!result.success) {
+			throw new Error(result.error);
+		}
+
+		toast.success(result.message);
+		setInstitutionToRemove(null);
+		setSelectedAccountId(null);
+		setSelectedInstitutionId(null);
+		router.refresh();
 	};
 
 	return (
@@ -298,6 +332,7 @@ export function LoansPage({
 								onCreateOperation={() =>
 									openOperationDialog(summary.institution.id)
 								}
+								onDelete={() => setInstitutionToRemove(summary)}
 							/>
 						))}
 					</div>
@@ -424,6 +459,21 @@ export function LoansPage({
 				account={selectedAccount}
 				installmentId={paymentTarget?.installmentId ?? undefined}
 				trigger={null}
+			/>
+
+			<ConfirmActionDialog
+				open={institutionToRemove !== null}
+				onOpenChange={(open) => {
+					if (!open) {
+						setInstitutionToRemove(null);
+					}
+				}}
+				title={institutionRemovalTitle}
+				description={institutionRemovalDescription}
+				confirmLabel="Remover"
+				pendingLabel="Removendo..."
+				confirmVariant="destructive"
+				onConfirm={handleConfirmInstitutionRemoval}
 			/>
 		</div>
 	);

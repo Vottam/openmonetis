@@ -1,14 +1,21 @@
+import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { loanInstallments, loanOperations, loanPayments } from "@/db/schema";
+import {
+	institutions,
+	loanInstallments,
+	loanOperations,
+	loanPayments,
+	user,
+} from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import {
 	createInstallmentAction,
 	createLoanInstitutionAction,
 	createLoanOperationAction,
+	deleteLoanInstitutionAction,
 	recordPaymentAction,
 	updateLoanOperationAction,
-	updatePaymentStatusAction,
 } from "./actions";
 import { seedLoanTestData } from "./lib/test-support";
 import { fetchInstitutionsForUser } from "./queries";
@@ -273,55 +280,147 @@ describe("ações de loans", () => {
 		expect(Number(stored.totalContracted)).toBe(5000);
 	});
 
-	it("atualiza o status de pagamento sem quebrar o registro persistido", async () => {
-		const { institutionId } = await seedLoanTestData();
-		const op = await createLoanOperationAction(
+	it("remove uma instituição vazia com segurança", async () => {
+		const { userId } = await seedLoanTestData();
+
+		const created = await createLoanInstitutionAction({
+			name: "Banco sem dados",
+			type: "bank",
+			description: "",
+			logo: "",
+		});
+
+		expect(created.success).toBe(true);
+		const institutionId = assertDefined(
+			created.institutionId,
+			"institutionId ausente",
+		);
+
+		const deleted = await deleteLoanInstitutionAction({ id: institutionId });
+		expect(deleted.success).toBe(true);
+
+		const remainingInstitutions = await fetchInstitutionsForUser(userId);
+		expect(
+			remainingInstitutions.some((item) => item.id === institutionId),
+		).toBe(false);
+	});
+
+	it("remove instituição com operação, parcelas e pagamentos sem deixar órfãos", async () => {
+		const { userId, institutionId } = await seedLoanTestData();
+
+		const sibling = await createLoanInstitutionAction({
+			name: "Banco vizinho",
+			type: "bank",
+			description: "",
+			logo: "",
+		});
+		expect(sibling.success).toBe(true);
+		const siblingInstitutionId = assertDefined(
+			sibling.institutionId,
+			"institutionId ausente",
+		);
+
+		const operation = await createLoanOperationAction(
 			baseOperationInput(institutionId),
 		);
+		expect(operation.success).toBe(true);
 		const loanOperationId = assertDefined(
-			op.loanOperationId,
+			operation.loanOperationId,
 			"loanOperationId ausente",
 		);
+
 		const installment = await createInstallmentAction({
 			loanOperationId,
 			installmentNumber: 1,
 			dueDate: new Date("2025-02-15T00:00:00.000Z"),
-			expectedValue: 500,
-			expectedPrincipal: 500,
-			expectedInterest: 0,
+			expectedValue: 1000,
+			expectedPrincipal: 800,
+			expectedInterest: 200,
 			status: "pending",
 		});
+		expect(installment.success).toBe(true);
 
 		const payment = await recordPaymentAction({
 			installmentId: assertDefined(
 				installment.installmentId,
 				"installmentId ausente",
 			),
-			amount: 500,
-			principalPaid: 500,
-			interestPaid: 0,
+			amount: 1000,
+			principalPaid: 800,
+			interestPaid: 200,
 			chargePaid: 0,
 			paidAt: new Date("2025-02-15T00:00:00.000Z"),
 			status: "paid",
 		});
+		expect(payment.success).toBe(true);
 
-		const updated = await updatePaymentStatusAction({
-			paymentId: payment.paymentId,
-			status: "overdue",
+		const deleted = await deleteLoanInstitutionAction({ id: institutionId });
+		expect(deleted.success).toBe(true);
+
+		const [remainingOperations, remainingInstallments, remainingPayments] =
+			await Promise.all([
+				db
+					.select({ id: loanOperations.id })
+					.from(loanOperations)
+					.where(eq(loanOperations.institutionId, institutionId)),
+				db
+					.select({ id: loanInstallments.id })
+					.from(loanInstallments)
+					.where(eq(loanInstallments.loanOperationId, loanOperationId)),
+				db
+					.select({ id: loanPayments.id })
+					.from(loanPayments)
+					.where(eq(loanPayments.loanOperationId, loanOperationId)),
+			]);
+
+		expect(remainingOperations).toHaveLength(0);
+		expect(remainingInstallments).toHaveLength(0);
+		expect(remainingPayments).toHaveLength(0);
+
+		const remainingInstitutions = await fetchInstitutionsForUser(userId);
+		expect(
+			remainingInstitutions.some((item) => item.id === institutionId),
+		).toBe(false);
+		expect(
+			remainingInstitutions.some((item) => item.id === siblingInstitutionId),
+		).toBe(true);
+	});
+
+	it("impede que um usuário remova instituição de outro usuário", async () => {
+		const foreignUserId = `loan-foreign-user-${randomUUID()}`;
+		const foreignInstitutionId = `loan-foreign-institution-${randomUUID()}`;
+
+		await db.insert(user).values({
+			id: foreignUserId,
+			name: "Outro usuário",
+			email: `foreign-${randomUUID()}@example.com`,
+			emailVerified: true,
+			image: null,
+			createdAt: new Date("2025-01-01T00:00:00.000Z"),
+			updatedAt: new Date("2025-01-01T00:00:00.000Z"),
 		});
 
-		expect(updated.success).toBe(true);
+		await db.insert(institutions).values({
+			id: foreignInstitutionId,
+			name: "Banco de outro usuário",
+			type: "bank",
+			description: null,
+			logo: null,
+			userId: foreignUserId,
+			createdAt: new Date("2025-01-01T00:00:00.000Z"),
+			updatedAt: new Date("2025-01-01T00:00:00.000Z"),
+		});
 
-		const [storedPayment] = await db
-			.select()
-			.from(loanPayments)
-			.where(
-				eq(
-					loanPayments.id,
-					assertDefined(payment.paymentId, "paymentId ausente"),
-				),
-			);
+		const result = await deleteLoanInstitutionAction({
+			id: foreignInstitutionId,
+		});
+		expect(result.success).toBe(false);
 
-		expect(storedPayment.status).toBe("overdue");
+		const [foreignInstitution] = await db
+			.select({ id: institutions.id })
+			.from(institutions)
+			.where(eq(institutions.id, foreignInstitutionId));
+
+		expect(foreignInstitution).toBeDefined();
 	});
 });

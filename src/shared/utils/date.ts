@@ -284,6 +284,21 @@ export function addMonthsToDate(value: Date, offset: number): Date {
 	return result;
 }
 
+export function adjustDateToNextBusinessDay(value: Date): Date {
+	const result = new Date(value);
+	const dayOfWeek = result.getDay();
+
+	if (dayOfWeek === 6) {
+		result.setDate(result.getDate() + 2);
+	}
+
+	if (dayOfWeek === 0) {
+		result.setDate(result.getDate() + 1);
+	}
+
+	return result;
+}
+
 // ============================================================================
 // DATE FORMATTING
 // ============================================================================

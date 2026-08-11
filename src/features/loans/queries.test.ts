@@ -6,6 +6,7 @@ import {
 	institutions,
 	loanInstallments,
 	loanOperations,
+	loanPayments,
 	payers,
 	user,
 } from "@/db/schema";
@@ -14,6 +15,7 @@ import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import {
 	createInstallmentAction,
 	createLoanOperationAction,
+	deleteLoanInstitutionAction,
 	recordPaymentAction,
 } from "./actions";
 import {
@@ -27,6 +29,8 @@ import {
 	fetchLoanBalance,
 	fetchLoanSummaryForUser,
 } from "./queries";
+
+type DashboardSource = Parameters<typeof buildLoanDashboardData>[0];
 
 function loanDates() {
 	return {
@@ -552,5 +556,77 @@ describe("consultas financeiras de loans", () => {
 		expect(Number(balance?.limit)).toBeCloseTo(2000.1, 2);
 		expect(Number(balance?.utilized)).toBeCloseTo(1234.56, 2);
 		expect(Number(balance?.available)).toBeCloseTo(765.54, 2);
+	});
+
+	it("atualiza o dashboard depois da exclusão e preserva outras instituições", async () => {
+		const { userId, institutionId } = await seedLoanTestData();
+		const sibling = await db
+			.insert(institutions)
+			.values({
+				id: `loan-sibling-${randomUUID()}`,
+				name: "Banco irmão",
+				type: "bank",
+				description: null,
+				logo: null,
+				userId,
+			})
+			.returning({ id: institutions.id });
+		const siblingInstitutionId = sibling[0]?.id;
+
+		if (!siblingInstitutionId) {
+			throw new Error("siblingInstitutionId ausente");
+		}
+
+		const deletedOperation = await createLoanOperationAction(
+			fixedOperationInput(institutionId),
+		);
+		expect(deletedOperation.success).toBe(true);
+
+		const siblingOperation = await createLoanOperationAction(
+			fixedOperationInput(siblingInstitutionId),
+		);
+		expect(siblingOperation.success).toBe(true);
+
+		const deleted = await deleteLoanInstitutionAction({ id: institutionId });
+		expect(deleted.success).toBe(true);
+
+		const [
+			sourceInstitutions,
+			sourceOperations,
+			sourceInstallments,
+			sourcePayments,
+		] = await Promise.all([
+			db.select().from(institutions),
+			db.select().from(loanOperations),
+			db.select().from(loanInstallments),
+			db.select().from(loanPayments),
+		]);
+
+		const serializeRow = <T>(row: T) =>
+			JSON.parse(JSON.stringify(row)) as unknown;
+		const dashboard = buildLoanDashboardData({
+			institutions: sourceInstitutions.map(
+				serializeRow,
+			) as DashboardSource["institutions"],
+			operations: sourceOperations.map(
+				serializeRow,
+			) as DashboardSource["operations"],
+			installments: sourceInstallments.map(
+				serializeRow,
+			) as DashboardSource["installments"],
+			payments: sourcePayments.map(serializeRow) as DashboardSource["payments"],
+		});
+
+		expect(
+			dashboard.institutions.some((item) => item.id === institutionId),
+		).toBe(false);
+		expect(
+			dashboard.institutions.some((item) => item.id === siblingInstitutionId),
+		).toBe(true);
+		expect(
+			dashboard.accounts.some(
+				(account) => account.institutionId === siblingInstitutionId,
+			),
+		).toBe(true);
 	});
 });

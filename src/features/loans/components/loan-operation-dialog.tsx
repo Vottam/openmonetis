@@ -33,12 +33,15 @@ import {
 } from "@/shared/components/ui/select";
 import { useControlledState } from "@/shared/hooks/use-controlled-state";
 import { useFormState } from "@/shared/hooks/use-form-state";
+import { formatCurrency } from "@/shared/utils/currency";
+import { formatDateOnly } from "@/shared/utils/date";
 import {
 	buildLoanInstallmentPlan,
 	type LoanInstallmentDraft,
 } from "../lib/dashboard";
 import {
 	buildLoanOperationInitialValues,
+	buildLoanOperationPreview,
 	type LoanOperationFormValues,
 	parseLoanOperationFormValues,
 } from "../lib/form-values";
@@ -114,6 +117,10 @@ export function LoanOperationDialog({
 
 	const { formState, resetForm, updateField } =
 		useFormState<LoanOperationFormValues>(initialState);
+	const preview = useMemo(
+		() => buildLoanOperationPreview(formState),
+		[formState],
+	);
 
 	useEffect(() => {
 		if (dialogOpen) {
@@ -169,6 +176,10 @@ export function LoanOperationDialog({
 		institutions.find(
 			(institution) => institution.id === formState.institutionId,
 		) ?? institutions[0];
+	const primaryAmountLabel =
+		formState.loanType === "revolving"
+			? "Limite concedido"
+			: "Valor contratado";
 
 	return (
 		<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -177,8 +188,8 @@ export function LoanOperationDialog({
 				<DialogHeader>
 					<DialogTitle>Nova operação</DialogTitle>
 					<DialogDescription>
-						Cadastre uma operação de crédito rotativo ou empréstimo fixo e gere
-						o cronograma de parcelas.
+						Cadastre uma operação de crédito rotativo ou empréstimo fixo com os
+						dados que você realmente conhece na contratação.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -228,78 +239,27 @@ export function LoanOperationDialog({
 						</div>
 					</div>
 
-					<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+					<div className="grid gap-4 sm:grid-cols-2">
 						<div className="space-y-2">
-							<Label htmlFor="principal-borrowed">Principal tomado</Label>
+							<Label htmlFor="primary-amount">{primaryAmountLabel}</Label>
 							<Input
-								id="principal-borrowed"
-								value={formState.principalBorrowed}
+								id="primary-amount"
+								value={formState.primaryAmount}
 								onChange={(event) =>
-									updateField("principalBorrowed", event.target.value)
+									updateField("primaryAmount", event.target.value)
 								}
 								placeholder="0,00"
 								inputMode="decimal"
 							/>
 						</div>
+
 						<div className="space-y-2">
-							<Label htmlFor="amount-received">Valor recebido</Label>
+							<Label htmlFor="installment-value">Valor da parcela</Label>
 							<Input
-								id="amount-received"
-								value={formState.amountReceived}
+								id="installment-value"
+								value={formState.installmentValue}
 								onChange={(event) =>
-									updateField("amountReceived", event.target.value)
-								}
-								placeholder="0,00"
-								inputMode="decimal"
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="total-contracted">
-								{formState.loanType === "revolving"
-									? "Limite concedido"
-									: "Total contratado"}
-							</Label>
-							<Input
-								id="total-contracted"
-								value={formState.totalContracted}
-								onChange={(event) =>
-									updateField("totalContracted", event.target.value)
-								}
-								placeholder="0,00"
-								inputMode="decimal"
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="total-interest">Juros totais</Label>
-							<Input
-								id="total-interest"
-								value={formState.totalInterest}
-								onChange={(event) =>
-									updateField("totalInterest", event.target.value)
-								}
-								placeholder="0,00"
-								inputMode="decimal"
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="total-charge">Encargos totais</Label>
-							<Input
-								id="total-charge"
-								value={formState.totalCharge}
-								onChange={(event) =>
-									updateField("totalCharge", event.target.value)
-								}
-								placeholder="0,00"
-								inputMode="decimal"
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="total-payable">Total a pagar</Label>
-							<Input
-								id="total-payable"
-								value={formState.totalPayable}
-								onChange={(event) =>
-									updateField("totalPayable", event.target.value)
+									updateField("installmentValue", event.target.value)
 								}
 								placeholder="0,00"
 								inputMode="decimal"
@@ -307,18 +267,21 @@ export function LoanOperationDialog({
 						</div>
 					</div>
 
-					<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+					<div className="grid gap-4 sm:grid-cols-2">
 						<div className="space-y-2">
-							<Label htmlFor="start-date">Data inicial</Label>
+							<Label htmlFor="total-installments">Número de parcelas</Label>
 							<Input
-								id="start-date"
-								type="date"
-								value={formState.startDate}
+								id="total-installments"
+								type="number"
+								min={1}
+								value={formState.totalInstallments}
 								onChange={(event) =>
-									updateField("startDate", event.target.value)
+									updateField("totalInstallments", event.target.value)
 								}
+								placeholder="1"
 							/>
 						</div>
+
 						<div className="space-y-2">
 							<Label htmlFor="next-due-date">Primeiro vencimento</Label>
 							<Input
@@ -330,67 +293,49 @@ export function LoanOperationDialog({
 								}
 							/>
 						</div>
-						<div className="space-y-2">
-							<Label htmlFor="total-installments">Parcelas</Label>
-							<Input
-								id="total-installments"
-								type="number"
-								min={1}
-								value={formState.totalInstallments}
-								onChange={(event) =>
-									updateField("totalInstallments", event.target.value)
-								}
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="current-installment">Parcela atual</Label>
-							<Input
-								id="current-installment"
-								type="number"
-								min={1}
-								value={formState.currentInstallment}
-								onChange={(event) =>
-									updateField("currentInstallment", event.target.value)
-								}
-							/>
-						</div>
 					</div>
 
-					<div className="grid gap-4 sm:grid-cols-2">
-						<div className="space-y-2">
-							<Label htmlFor="end-date">Data final</Label>
-							<Input
-								id="end-date"
-								type="date"
-								value={formState.endDate}
-								onChange={(event) => updateField("endDate", event.target.value)}
-							/>
+					<div className="grid gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-3">
+						<div className="space-y-1">
+							<p className="text-xs uppercase tracking-wide text-muted-foreground">
+								Total a pagar
+							</p>
+							<p className="text-lg font-semibold">
+								{preview ? formatCurrency(preview.totalPayable) : "—"}
+							</p>
 						</div>
-						<div className="space-y-2">
-							<Label htmlFor="loan-status">Status</Label>
-							<Select
-								value={formState.status}
-								onValueChange={(value) =>
-									updateField(
-										"status",
-										value as LoanOperationFormValues["status"],
-									)
+						<div className="space-y-1">
+							<p className="text-xs uppercase tracking-wide text-muted-foreground">
+								Custo total (juros e encargos)
+							</p>
+							<p
+								className={
+									preview && preview.financialCost < 0
+										? "text-lg font-semibold text-destructive"
+										: "text-lg font-semibold"
 								}
 							>
-								<SelectTrigger id="loan-status" className="w-full">
-									<SelectValue placeholder="Selecione o status" />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="active">Ativo</SelectItem>
-									<SelectItem value="paid">Quitado</SelectItem>
-									<SelectItem value="overdue">Em atraso</SelectItem>
-									<SelectItem value="cancelled">Cancelado</SelectItem>
-								</SelectContent>
-							</Select>
+								{preview ? formatCurrency(preview.financialCost) : "—"}
+							</p>
+						</div>
+						<div className="space-y-1">
+							<p className="text-xs uppercase tracking-wide text-muted-foreground">
+								Último vencimento
+							</p>
+							<p className="text-lg font-semibold">
+								{preview ? (formatDateOnly(preview.finalDueDate) ?? "—") : "—"}
+							</p>
 						</div>
 					</div>
 
-					<div className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
+					{preview && preview.financialCost < 0 ? (
+						<p className="text-sm text-destructive">
+							O total a pagar não pode ser menor que o valor principal
+							informado.
+						</p>
+					) : null}
+
+					<div className="rounded-xl border bg-muted/10 p-4 text-sm text-muted-foreground">
 						<p className="font-medium text-foreground">
 							{selectedInstitution
 								? selectedInstitution.name

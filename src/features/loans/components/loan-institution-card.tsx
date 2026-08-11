@@ -1,5 +1,6 @@
 "use client";
 
+import { RiDeleteBinLine } from "@remixicon/react";
 import Image from "next/image";
 import { useState } from "react";
 import { Badge } from "@/shared/components/ui/badge";
@@ -11,6 +12,11 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/shared/components/ui/card";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@/shared/components/ui/tooltip";
 import { resolveLogoSrc } from "@/shared/lib/logo";
 import {
 	buildInitials,
@@ -63,11 +69,13 @@ export function LoanInstitutionCard({
 	selected = false,
 	onClick,
 	onCreateOperation,
+	onDelete,
 }: {
 	summary: LoanInstitutionSummary;
 	selected?: boolean;
 	onClick: () => void;
 	onCreateOperation: () => void;
+	onDelete: () => void;
 }) {
 	const { institution, accountCount, operationCount, firstAccountId } = summary;
 
@@ -120,16 +128,38 @@ export function LoanInstitutionCard({
 					<p className="text-sm text-muted-foreground">
 						Clique para abrir a instituição e ver suas operações.
 					</p>
-					<Button
-						type="button"
-						variant="outline"
-						onClick={(event) => {
-							event.stopPropagation();
-							onCreateOperation();
-						}}
-					>
-						Nova operação
-					</Button>
+
+					<div className="flex items-center gap-2">
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button
+									type="button"
+									variant="ghost"
+									size="icon-sm"
+									className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+									onClick={(event) => {
+										event.stopPropagation();
+										onDelete();
+									}}
+								>
+									<RiDeleteBinLine className="size-4" aria-hidden />
+									<span className="sr-only">Remover instituição</span>
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent>Remover instituição</TooltipContent>
+						</Tooltip>
+
+						<Button
+							type="button"
+							variant="outline"
+							onClick={(event) => {
+								event.stopPropagation();
+								onCreateOperation();
+							}}
+						>
+							Nova operação
+						</Button>
+					</div>
 				</div>
 			</CardContent>
 		</Card>
