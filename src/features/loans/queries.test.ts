@@ -1,9 +1,21 @@
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { institutions, loanOperations, payers, user } from "@/db/schema";
+import {
+	institutions,
+	loanInstallments,
+	loanOperations,
+	payers,
+	user,
+} from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
+import {
+	createInstallmentAction,
+	createLoanOperationAction,
+	recordPaymentAction,
+} from "./actions";
 import { buildLoanDashboardData } from "./lib/dashboard";
 import { seedLoanTestData } from "./lib/test-support";
 import {
@@ -17,6 +29,63 @@ function loanDates() {
 	return {
 		startDate: "2025-01-01",
 		nextDueDate: "2025-02-01",
+	};
+}
+
+function fixedOperationInput(institutionId: string) {
+	return {
+		institutionId,
+		loanType: "fixed" as const,
+		principalBorrowed: 1000,
+		amountReceived: 1000,
+		totalContracted: 1200,
+		totalInterest: 200,
+		totalCharge: 0,
+		totalPayable: 1200,
+		startDate: new Date("2025-01-01T00:00:00.000Z"),
+		endDate: null,
+		nextDueDate: new Date("2025-02-01T00:00:00.000Z"),
+		currentInstallment: 1,
+		totalInstallments: 2,
+		status: "active" as const,
+	};
+}
+
+function revolvingZeroBalanceInput(institutionId: string) {
+	return {
+		institutionId,
+		loanType: "revolving" as const,
+		principalBorrowed: 1000,
+		amountReceived: 1000,
+		totalContracted: 3000,
+		totalInterest: 0,
+		totalCharge: 0,
+		totalPayable: 1000,
+		startDate: new Date("2025-01-01T00:00:00.000Z"),
+		endDate: null,
+		nextDueDate: new Date("2025-02-01T00:00:00.000Z"),
+		currentInstallment: 1,
+		totalInstallments: 1,
+		status: "active" as const,
+	};
+}
+
+function oneCentResidualFixedInput(institutionId: string) {
+	return {
+		institutionId,
+		loanType: "fixed" as const,
+		principalBorrowed: 100,
+		amountReceived: 100,
+		totalContracted: 250.01,
+		totalInterest: 150.01,
+		totalCharge: 0,
+		totalPayable: 250.01,
+		startDate: new Date("2025-01-01T00:00:00.000Z"),
+		endDate: null,
+		nextDueDate: new Date("2025-02-01T00:00:00.000Z"),
+		currentInstallment: 1,
+		totalInstallments: 1,
+		status: "active" as const,
 	};
 }
 
@@ -90,6 +159,204 @@ describe("consultas financeiras de loans", () => {
 		expect(account).toBeDefined();
 		expect(Number(account?.summary.totalContracted)).toBe(3000);
 		expect(Number(account?.operations[0].totalContracted)).toBe(3000);
+	});
+
+	it("marca empréstimo fixo totalmente quitado como paid no detalhe e no summary", async () => {
+		const { userId, institutionId } = await seedLoanTestData();
+
+		const operation = await createLoanOperationAction(
+			fixedOperationInput(institutionId),
+		);
+		expect(operation.success).toBe(true);
+
+		const loanOperationId = operation.loanOperationId;
+		expect(loanOperationId).toBeDefined();
+
+		for (const draft of [
+			{
+				installmentNumber: 1,
+				dueDate: new Date("2025-02-15T00:00:00.000Z"),
+				expectedValue: 600,
+				expectedPrincipal: 500,
+				expectedInterest: 100,
+			},
+			{
+				installmentNumber: 2,
+				dueDate: new Date("2025-03-15T00:00:00.000Z"),
+				expectedValue: 600,
+				expectedPrincipal: 500,
+				expectedInterest: 100,
+			},
+		]) {
+			const created = await createInstallmentAction({
+				loanOperationId: loanOperationId as string,
+				installmentNumber: draft.installmentNumber,
+				dueDate: draft.dueDate,
+				expectedValue: draft.expectedValue,
+				expectedPrincipal: draft.expectedPrincipal,
+				expectedInterest: draft.expectedInterest,
+				status: "pending",
+			});
+			expect(created.success).toBe(true);
+		}
+
+		for (const installmentId of (
+			await db
+				.select({ id: loanInstallments.id })
+				.from(loanInstallments)
+				.where(eq(loanInstallments.loanOperationId, loanOperationId as string))
+				.orderBy(loanInstallments.installmentNumber)
+		).map((row) => row.id)) {
+			const payment = await recordPaymentAction({
+				installmentId,
+				amount: 600,
+				principalPaid: 500,
+				interestPaid: 100,
+				chargePaid: 0,
+				paidAt: new Date("2025-02-15T00:00:00.000Z"),
+				status: "paid",
+			});
+			expect(payment.success).toBe(true);
+		}
+
+		const institutionsForUser = await fetchInstitutionsForUser(userId);
+		const loanData = await fetchLoanAccountDetails(userId, [institutionId]);
+		const dashboard = buildLoanDashboardData({
+			institutions: institutionsForUser,
+			operations: loanData.operations,
+			installments: loanData.installments,
+			payments: loanData.payments,
+		});
+		const account = dashboard.accounts.find(
+			(item) =>
+				item.institutionId === institutionId && item.loanType === "fixed",
+		);
+		const detailOperation = loanData.operations.find(
+			(item) => item.loanType === "fixed",
+		);
+
+		expect(detailOperation?.status).toBe("paid");
+		expect(account?.summary.status).toBe("paid");
+		expect(Number(account?.summary.totalPaid)).toBe(1200);
+		expect(Number(account?.summary.remainingPrincipal)).toBe(0);
+		expect(Number(account?.summary.remainingInterest)).toBe(0);
+		expect(Number(account?.summary.paidInstallmentCount)).toBe(2);
+	});
+
+	it("mantém o rotativo em aberto mesmo com saldo zero", async () => {
+		const { userId, institutionId } = await seedLoanTestData();
+
+		const operation = await createLoanOperationAction(
+			revolvingZeroBalanceInput(institutionId),
+		);
+		expect(operation.success).toBe(true);
+
+		const loanOperationId = operation.loanOperationId;
+		expect(loanOperationId).toBeDefined();
+
+		const installment = await createInstallmentAction({
+			loanOperationId: loanOperationId as string,
+			installmentNumber: 1,
+			dueDate: new Date("2025-02-15T00:00:00.000Z"),
+			expectedValue: 1000,
+			expectedPrincipal: 1000,
+			expectedInterest: 0,
+			status: "pending",
+		});
+		expect(installment.success).toBe(true);
+
+		const payment = await recordPaymentAction({
+			installmentId: installment.installmentId as string,
+			amount: 1000,
+			principalPaid: 1000,
+			interestPaid: 0,
+			chargePaid: 0,
+			paidAt: new Date("2025-02-15T00:00:00.000Z"),
+			status: "paid",
+		});
+		expect(payment.success).toBe(true);
+
+		const institutionsForUser = await fetchInstitutionsForUser(userId);
+		const loanData = await fetchLoanAccountDetails(userId, [institutionId]);
+		const dashboard = buildLoanDashboardData({
+			institutions: institutionsForUser,
+			operations: loanData.operations,
+			installments: loanData.installments,
+			payments: loanData.payments,
+		});
+		const account = dashboard.accounts.find(
+			(item) =>
+				item.institutionId === institutionId && item.loanType === "revolving",
+		);
+		const detailOperation = loanData.operations.find(
+			(item) => item.loanType === "revolving",
+		);
+
+		expect(detailOperation?.status).toBe("active");
+		expect(account?.summary.status).toBe("active");
+		expect(Number(account?.summary.remainingPrincipal)).toBe(0);
+		expect(Number(account?.summary.totalPaid)).toBe(1000);
+	});
+
+	it("mantém um centavo residual como ativo, não quitado", async () => {
+		const { userId, institutionId } = await seedLoanTestData();
+
+		const operation = await createLoanOperationAction(
+			oneCentResidualFixedInput(institutionId),
+		);
+		expect(operation.success).toBe(true);
+
+		const loanOperationId = operation.loanOperationId;
+		expect(loanOperationId).toBeDefined();
+
+		const installment = await createInstallmentAction({
+			loanOperationId: loanOperationId as string,
+			installmentNumber: 1,
+			dueDate: new Date("2025-02-15T00:00:00.000Z"),
+			expectedValue: 250.01,
+			expectedPrincipal: 100,
+			expectedInterest: 150.01,
+			status: "pending",
+		});
+		expect(installment.success).toBe(true);
+
+		const payment = await recordPaymentAction({
+			installmentId: installment.installmentId as string,
+			amount: 250,
+			principalPaid: 100,
+			interestPaid: 150,
+			chargePaid: 0,
+			paidAt: new Date("2025-02-15T00:00:00.000Z"),
+			status: "partial",
+		});
+		expect(payment.success).toBe(true);
+
+		const institutionsForUser = await fetchInstitutionsForUser(userId);
+		const loanData = await fetchLoanAccountDetails(userId, [institutionId]);
+		const dashboard = buildLoanDashboardData({
+			institutions: institutionsForUser,
+			operations: loanData.operations,
+			installments: loanData.installments,
+			payments: loanData.payments,
+		});
+		const account = dashboard.accounts.find(
+			(item) =>
+				item.institutionId === institutionId && item.loanType === "fixed",
+		);
+		const detailOperation = loanData.operations.find(
+			(item) => item.loanType === "fixed",
+		);
+
+		expect(detailOperation?.status).toBe("active");
+		expect(account?.summary.status).toBe("active");
+		expect(Number(account?.summary.totalPaid)).toBe(250);
+		expect(
+			Math.round(
+				(Number(account?.summary.totalPayable ?? 0) -
+					Number(account?.summary.totalPaid ?? 0)) *
+					100,
+			),
+		).toBe(1);
 	});
 
 	it("mantém o limite disponível do rotativo e ignora juros na recomposição do limite", async () => {

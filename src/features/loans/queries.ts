@@ -33,6 +33,53 @@ function toDateString(value: unknown): string {
 	return "";
 }
 
+function toCents(value: unknown): number {
+	const numberValue = Number(value);
+	return Number.isFinite(numberValue) ? Math.round(numberValue * 100) : 0;
+}
+
+function getRemainingInstallmentCents(
+	installments: Array<{
+		expectedValue: unknown;
+		paidAmount: unknown;
+	}>,
+): number {
+	return installments.reduce(
+		(total, installment) =>
+			total +
+			Math.max(
+				0,
+				toCents(installment.expectedValue) - toCents(installment.paidAmount),
+			),
+		0,
+	);
+}
+
+function resolveLoanOperationStatus(
+	row: { loanType: string; status: string },
+	installments: Array<{
+		expectedValue: unknown;
+		paidAmount: unknown;
+	}>,
+): LoanStatus {
+	if (row.status === "overdue") {
+		return "overdue";
+	}
+
+	if (row.status === "cancelled") {
+		return "cancelled";
+	}
+
+	if (
+		row.loanType === "fixed" &&
+		getRemainingInstallmentCents(installments) === 0
+	) {
+		return "paid";
+	}
+
+	return row.status as LoanStatus;
+}
+
 function mapInstitution(row: {
 	id: string;
 	name: string;
@@ -590,7 +637,16 @@ export async function fetchLoanAccountDetails(
 		.orderBy(asc(loanPayments.paidAt));
 
 	return {
-		operations: operationsRows.map((row) => mapLoanOperation(row)),
+		operations: operationsRows.map((row) => {
+			const operationInstallments = installmentsRows.filter(
+				(installment) => installment.loanOperationId === row.id,
+			);
+
+			return mapLoanOperation({
+				...row,
+				status: resolveLoanOperationStatus(row, operationInstallments),
+			});
+		}),
 		installments: installmentsRows.map((row) => mapInstallment(row)),
 		payments: paymentsRows.map((row) => mapPayment(row)),
 	};
