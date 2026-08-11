@@ -29,6 +29,7 @@ export type LoanInstitution = {
 	name: string;
 	type: "bank" | "other";
 	description?: string;
+	logo?: string | null;
 	createdAt: string;
 	updatedAt: string;
 };

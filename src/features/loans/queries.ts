@@ -85,6 +85,7 @@ function mapInstitution(row: {
 	name: string;
 	type: string;
 	description: string | null;
+	logo: string | null;
 	createdAt: Date;
 	updatedAt: Date;
 }): LoanInstitution {
@@ -93,6 +94,7 @@ function mapInstitution(row: {
 		name: row.name,
 		type: row.type as "bank" | "other",
 		description: row.description ?? undefined,
+		logo: row.logo,
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
 	};
@@ -209,6 +211,7 @@ export async function fetchInstitutionsForUser(userId: string) {
 			name: institutions.name,
 			type: institutions.type,
 			description: institutions.description,
+			logo: institutions.logo,
 			createdAt: institutions.createdAt,
 			updatedAt: institutions.updatedAt,
 		})
@@ -266,6 +269,7 @@ export async function fetchLoanAccountsForUser(
 			institutionName: institutions.name,
 			institutionType: institutions.type,
 			description: institutions.description,
+			logo: institutions.logo,
 			loanType: loanOperations.loanType,
 			principalBorrowed: loanOperations.principalBorrowed,
 			amountReceived: loanOperations.amountReceived,
@@ -474,6 +478,7 @@ export async function fetchLoanSummaryForUser(userId: string) {
 			institutionName: institutions.name,
 			institutionType: institutions.type,
 			description: institutions.description,
+			logo: institutions.logo,
 			loanType: loanOperations.loanType,
 			principalBorrowed: loanOperations.principalBorrowed,
 			amountReceived: loanOperations.amountReceived,
@@ -506,6 +511,7 @@ export async function fetchLoanSummaryForUser(userId: string) {
 			name: row.institutionName ?? "",
 			type: row.institutionType ?? "other",
 			description: row.description ?? null,
+			logo: row.logo ?? null,
 			createdAt: row.createdAt,
 			updatedAt: row.updatedAt,
 		});
@@ -551,6 +557,7 @@ export async function fetchLoanAccountDetails(
 			institutionName: institutions.name,
 			institutionType: institutions.type,
 			description: institutions.description,
+			logo: institutions.logo,
 			loanType: loanOperations.loanType,
 			principalBorrowed: loanOperations.principalBorrowed,
 			amountReceived: loanOperations.amountReceived,

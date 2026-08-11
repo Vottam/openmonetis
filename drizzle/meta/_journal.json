@@ -239,6 +239,13 @@
 			"when": 1786282439111,
 			"tag": "0034_crazy_owl",
 			"breakpoints": true
+		},
+		{
+			"idx": 35,
+			"version": "7",
+			"when": 1786462121525,
+			"tag": "0035_ambiguous_vulcan",
+			"breakpoints": true
 		}
 	]
 }

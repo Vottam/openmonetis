@@ -1,6 +1,12 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useTransition } from "react";
+import {
+	type FormEvent,
+	type ReactNode,
+	useEffect,
+	useMemo,
+	useTransition,
+} from "react";
 import { toast } from "sonner";
 import { recordPaymentAction } from "@/features/loans/actions";
 import { Button } from "@/shared/components/ui/button";
@@ -174,7 +180,7 @@ export function LoanPaymentDialog({
 			? getInstallmentSummary(account, formState.installmentId)
 			: null;
 
-	const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+	const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 
 		if (!account) {

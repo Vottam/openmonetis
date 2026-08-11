@@ -14,8 +14,8 @@ if (!DATABASE_URL) {
 const DATABASE_URL_OBJECT = new URL(DATABASE_URL);
 const DRIZZLE_DIR = resolve(process.cwd(), "drizzle");
 const JOURNAL_PATH = resolve(DRIZZLE_DIR, "meta/_journal.json");
-const SNAPSHOT_PATH = resolve(DRIZZLE_DIR, "meta/0034_snapshot.json");
-const MIGRATION_0034_PATH = resolve(DRIZZLE_DIR, "0034_crazy_owl.sql");
+const SNAPSHOT_PATH = resolve(DRIZZLE_DIR, "meta/0035_snapshot.json");
+const MIGRATION_0035_PATH = resolve(DRIZZLE_DIR, "0035_ambiguous_vulcan.sql");
 
 const JOURNAL = JSON.parse(readFileSync(JOURNAL_PATH, "utf8")) as {
 	entries: Array<{ tag: string }>;
@@ -27,13 +27,16 @@ const SNAPSHOT = JSON.parse(readFileSync(SNAPSHOT_PATH, "utf8")) as {
 		{
 			foreignKeys?: Record<string, { onDelete?: string }>;
 			indexes?: Record<string, unknown>;
-			columns?: Record<string, { notNull?: boolean; type?: string }>;
+			columns?: Record<
+				string,
+				{ notNull?: boolean; type?: string; default?: unknown }
+			>;
 		}
 	>;
 };
 
 const JOURNAL_MIGRATIONS = JOURNAL.entries
-	.filter((entry) => entry.tag !== "0034_crazy_owl")
+	.filter((entry) => entry.tag !== "0035_ambiguous_vulcan")
 	.map((entry) => ({
 		tag: entry.tag,
 		path: resolve(DRIZZLE_DIR, `${entry.tag}.sql`),
@@ -41,7 +44,7 @@ const JOURNAL_MIGRATIONS = JOURNAL.entries
 
 const CLEAN_INSTALL_MIGRATIONS = [
 	...JOURNAL_MIGRATIONS,
-	{ tag: "0034_crazy_owl", path: MIGRATION_0034_PATH },
+	{ tag: "0035_ambiguous_vulcan", path: MIGRATION_0035_PATH },
 ];
 
 const LOAN_TABLES = [
@@ -373,6 +376,15 @@ function assertSnapshotMatchesMigration() {
 		SNAPSHOT.tables["public.institutions"].foreignKeys
 			?.institutions_user_id_user_id_fk?.onDelete,
 	).toBe("cascade");
+	expect(SNAPSHOT.tables["public.institutions"].columns?.logo?.type).toBe(
+		"text",
+	);
+	expect(SNAPSHOT.tables["public.institutions"].columns?.logo?.notNull).toBe(
+		false,
+	);
+	expect(
+		SNAPSHOT.tables["public.institutions"].columns?.logo?.default,
+	).toBeUndefined();
 	expect(
 		SNAPSHOT.tables["public.loan_installments"].foreignKeys
 			?.loan_installments_loan_operation_id_loan_operations_id_fk?.onDelete,
@@ -425,8 +437,9 @@ function assertSnapshotMatchesMigration() {
 	);
 }
 
-async function seedPre0034Data(client: Client) {
-	const userId = "TEST_PRE_0034_USER";
+async function seedPre0035Data(client: Client) {
+	const userId = "TEST_PRE_0035_USER";
+	const institutionId = "TEST_PRE_0035_INSTITUTION";
 	const payerId = "11111111-1111-4111-8111-111111111111";
 
 	await client.query(
@@ -436,8 +449,8 @@ async function seedPre0034Data(client: Client) {
 		`,
 		[
 			userId,
-			"TEST_PRE_0034_USER",
-			"test_pre_0034_user@example.com",
+			"TEST_PRE_0035_USER",
+			"test_pre_0035_user@example.com",
 			true,
 			null,
 		],
@@ -463,20 +476,36 @@ async function seedPre0034Data(client: Client) {
 		`,
 		[
 			payerId,
-			"TEST_PRE_0034_PAYER",
+			"TEST_PRE_0035_PAYER",
 			null,
 			null,
 			"active",
 			null,
 			"admin",
 			false,
-			"TEST_PRE_0034_SHARE",
+			"TEST_PRE_0035_SHARE",
 			null,
 			userId,
 		],
 	);
 
-	return { userId, payerId };
+	await client.query(
+		`
+			INSERT INTO "institutions" (
+				id,
+				name,
+				type,
+				description,
+				user_id,
+				created_at,
+				updated_at
+			)
+			VALUES ($1, $2, $3, $4, $5, now(), now())
+		`,
+		[institutionId, "TEST_PRE_0035_INSTITUTION", "bank", null, userId],
+	);
+
+	return { userId, payerId, institutionId };
 }
 
 async function readExactRowCount(client: Client, tableName: string) {
@@ -504,6 +533,31 @@ async function readColumnType(
 	);
 
 	return result.rows[0]?.data_type ?? null;
+}
+
+async function readColumnNullable(
+	client: Client,
+	tableName: string,
+	columnName: string,
+) {
+	const result = await client.query<{
+		is_nullable: string;
+		column_default: string | null;
+	}>(
+		`
+			SELECT is_nullable, column_default
+			FROM information_schema.columns
+			WHERE table_schema = 'public'
+			  AND table_name = $1
+			  AND column_name = $2
+		`,
+		[tableName, columnName],
+	);
+
+	return {
+		isNullable: result.rows[0]?.is_nullable ?? null,
+		columnDefault: result.rows[0]?.column_default ?? null,
+	};
 }
 
 async function assertLoanSchema(client: Client) {
@@ -567,6 +621,11 @@ async function assertLoanSchema(client: Client) {
 	const userIdType = await readColumnType(client, "user", "id");
 
 	expect(userIdType).toBe("text");
+	expect(await readColumnType(client, "institutions", "logo")).toBe("text");
+	expect(await readColumnNullable(client, "institutions", "logo")).toEqual({
+		isNullable: "YES",
+		columnDefault: null,
+	});
 	expect(await readColumnType(client, "institutions", "user_id")).toBe(
 		userIdType,
 	);
@@ -607,8 +666,8 @@ afterAll(() => {
 	// no-op; databases are cleaned up per test.
 });
 
-describe("migration 0034 do loans", () => {
-	it("faz clean install oficial até a 0034", async () => {
+describe("migration 0035 do loans", () => {
+	it("faz clean install oficial até a 0035", async () => {
 		await withTemporaryDatabase("loan-clean", async (client) => {
 			await applyMigrations(client, CLEAN_INSTALL_MIGRATIONS);
 			assertSnapshotMatchesMigration();
@@ -616,15 +675,19 @@ describe("migration 0034 do loans", () => {
 		});
 	});
 
-	it("faz upgrade sintético 0033 → 0034 preservando dados", async () => {
+	it("faz upgrade sintético 0034 → 0035 preservando dados", async () => {
 		await withTemporaryDatabase("loan-upgrade", async (client) => {
 			await applyMigrations(client, JOURNAL_MIGRATIONS);
 
-			const seeds = await seedPre0034Data(client);
+			const seeds = await seedPre0035Data(client);
 			const userCountBefore = await readExactRowCount(client, "user");
 			const payerCountBefore = await readExactRowCount(client, "pagadores");
+			const institutionCountBefore = await readExactRowCount(
+				client,
+				"institutions",
+			);
 
-			await applySqlFile(client, MIGRATION_0034_PATH);
+			await applySqlFile(client, MIGRATION_0035_PATH);
 
 			assertSnapshotMatchesMigration();
 			await assertLoanSchema(client);
@@ -632,6 +695,9 @@ describe("migration 0034 do loans", () => {
 			expect(await readExactRowCount(client, "user")).toBe(userCountBefore);
 			expect(await readExactRowCount(client, "pagadores")).toBe(
 				payerCountBefore,
+			);
+			expect(await readExactRowCount(client, "institutions")).toBe(
+				institutionCountBefore,
 			);
 
 			const userRows = await client.query<{
@@ -643,8 +709,8 @@ describe("migration 0034 do loans", () => {
 			expect(userRows.rows).toEqual([
 				{
 					id: seeds.userId,
-					name: "TEST_PRE_0034_USER",
-					email: "test_pre_0034_user@example.com",
+					name: "TEST_PRE_0035_USER",
+					email: "test_pre_0035_user@example.com",
 				},
 			]);
 
@@ -661,11 +727,34 @@ describe("migration 0034 do loans", () => {
 			expect(payerRows.rows).toEqual([
 				{
 					id: seeds.payerId,
-					nome: "TEST_PRE_0034_PAYER",
-					share_code: "TEST_PRE_0034_SHARE",
+					nome: "TEST_PRE_0035_PAYER",
+					share_code: "TEST_PRE_0035_SHARE",
 					user_id: seeds.userId,
 				},
 			]);
+
+			const institutionRows = await client.query<{
+				id: string;
+				name: string;
+				logo: string | null;
+				user_id: string;
+			}>(`SELECT id, name, logo, user_id FROM "institutions" WHERE id = $1`, [
+				seeds.institutionId,
+			]);
+
+			expect(institutionRows.rows).toEqual([
+				{
+					id: seeds.institutionId,
+					name: "TEST_PRE_0035_INSTITUTION",
+					logo: null,
+					user_id: seeds.userId,
+				},
+			]);
+
+			expect(await readColumnNullable(client, "institutions", "logo")).toEqual({
+				isNullable: "YES",
+				columnDefault: null,
+			});
 		});
 	});
 });

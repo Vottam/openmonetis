@@ -35,15 +35,16 @@ const positiveNumericSchema = z.number().finite().positive();
 
 const createLoanInstitutionSchema = z.object({
 	name: z.string().trim().min(1, "Informe o nome da instituição."),
-	type: z.string().trim().min(1, "Informe o tipo da instituição."),
+	type: z.enum(["bank", "other"]),
 	description: z.string().trim().optional().default(""),
+	logo: z.string().trim().optional().default(""),
 });
 
 const createLoanOperationSchema = z.object({
 	institutionId: z.string().trim().min(1, "Informe a instituição."),
 	loanType: z.enum(["revolving", "fixed"]),
 	principalBorrowed: positiveNumericSchema,
-	amountReceived: numericSchema,
+	amountReceived: positiveNumericSchema,
 	totalContracted: positiveNumericSchema,
 	totalInterest: numericSchema,
 	totalCharge: numericSchema,
@@ -115,6 +116,7 @@ export async function createLoanInstitutionAction(input: unknown) {
 				name: data.name,
 				type: data.type,
 				description: data.description || null,
+				logo: data.logo || null,
 				userId: user.id,
 			})
 			.returning({ id: institutions.id });

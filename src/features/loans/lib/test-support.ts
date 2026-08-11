@@ -54,6 +54,7 @@ export async function seedLoanTestData() {
 		name: "Banco Teste",
 		type: "bank",
 		description: "Instituição de teste",
+		logo: null,
 		userId: seed.user.id,
 	});
 

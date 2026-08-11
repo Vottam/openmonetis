@@ -1,6 +1,12 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useTransition } from "react";
+import {
+	type FormEvent,
+	type ReactNode,
+	useEffect,
+	useMemo,
+	useTransition,
+} from "react";
 import { toast } from "sonner";
 import {
 	createInstallmentAction,
@@ -27,30 +33,16 @@ import {
 } from "@/shared/components/ui/select";
 import { useControlledState } from "@/shared/hooks/use-controlled-state";
 import { useFormState } from "@/shared/hooks/use-form-state";
-import { normalizeDecimalInput } from "@/shared/utils/currency";
-import { addMonthsToDate, toDateOnlyString } from "@/shared/utils/date";
 import {
 	buildLoanInstallmentPlan,
 	type LoanInstallmentDraft,
 } from "../lib/dashboard";
-import type { LoanInstitution, LoanStatus, LoanType } from "../types";
-
-type LoanOperationFormValues = {
-	institutionId: string;
-	loanType: LoanType;
-	principalBorrowed: string;
-	amountReceived: string;
-	totalContracted: string;
-	totalInterest: string;
-	totalCharge: string;
-	totalPayable: string;
-	startDate: string;
-	endDate: string;
-	nextDueDate: string;
-	totalInstallments: string;
-	currentInstallment: string;
-	status: LoanStatus;
-};
+import {
+	buildLoanOperationInitialValues,
+	type LoanOperationFormValues,
+	parseLoanOperationFormValues,
+} from "../lib/form-values";
+import type { LoanInstitution, LoanType } from "../types";
 
 interface LoanOperationDialogProps {
 	trigger?: ReactNode;
@@ -63,49 +55,16 @@ interface LoanOperationDialogProps {
 }
 
 const buildInitialValues = ({
-	institutions,
 	defaultInstitutionId,
 	defaultLoanType,
 }: {
-	institutions: LoanInstitution[];
 	defaultInstitutionId?: string | null;
 	defaultLoanType?: LoanType;
-}): LoanOperationFormValues => {
-	const today = new Date();
-	const firstDueDate = addMonthsToDate(today, 1);
-	const firstDue = toDateOnlyString(firstDueDate) ?? "";
-	const todayString = toDateOnlyString(today) ?? "";
-	const selectedInstitution =
-		institutions.find(
-			(institution) => institution.id === defaultInstitutionId,
-		) ??
-		institutions[0] ??
-		null;
-
-	return {
-		institutionId: selectedInstitution?.id ?? "",
-		loanType: defaultLoanType ?? "revolving",
-		principalBorrowed: "2000.00",
-		amountReceived: "2000.00",
-		totalContracted: defaultLoanType === "fixed" ? "5000.00" : "10000.00",
-		totalInterest: defaultLoanType === "fixed" ? "500.00" : "1000.00",
-		totalCharge: "0.00",
-		totalPayable: defaultLoanType === "fixed" ? "5500.00" : "3000.00",
-		startDate: todayString,
-		endDate: "",
-		nextDueDate: firstDue,
-		totalInstallments: defaultLoanType === "fixed" ? "12" : "12",
-		currentInstallment: "1",
-		status: "active",
-	};
-};
-
-function parseDecimal(value: string) {
-	const normalized = normalizeDecimalInput(value).trim();
-	if (!normalized) return 0;
-	const parsed = Number(normalized);
-	return Number.isFinite(parsed) ? parsed : Number.NaN;
-}
+}): LoanOperationFormValues =>
+	buildLoanOperationInitialValues({
+		institutionId: defaultInstitutionId,
+		loanType: defaultLoanType,
+	});
 
 async function generateInstallments(
 	loanOperationId: string,
@@ -147,11 +106,10 @@ export function LoanOperationDialog({
 	const initialState = useMemo(
 		() =>
 			buildInitialValues({
-				institutions,
 				defaultInstitutionId,
 				defaultLoanType,
 			}),
-		[institutions, defaultInstitutionId, defaultLoanType],
+		[defaultInstitutionId, defaultLoanType],
 	);
 
 	const { formState, resetForm, updateField } =
@@ -163,110 +121,28 @@ export function LoanOperationDialog({
 		}
 	}, [dialogOpen, initialState, resetForm]);
 
-	const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+	const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 
-		if (!formState.institutionId) {
-			toast.error("Selecione uma instituição.");
+		const parsedValues = parseLoanOperationFormValues(formState);
+		if (!parsedValues.ok) {
+			toast.error(parsedValues.error);
 			return;
 		}
 
-		const principalBorrowed = parseDecimal(formState.principalBorrowed);
-		const amountReceived =
-			parseDecimal(formState.amountReceived) || principalBorrowed;
-		const totalContracted = parseDecimal(formState.totalContracted);
-		const totalInterest = parseDecimal(formState.totalInterest);
-		const totalCharge = parseDecimal(formState.totalCharge);
-		const totalPayable = parseDecimal(formState.totalPayable);
-		const totalInstallments = Number.parseInt(formState.totalInstallments, 10);
-		const currentInstallment = Number.parseInt(
-			formState.currentInstallment,
-			10,
-		);
-
-		if (!Number.isFinite(principalBorrowed) || principalBorrowed <= 0) {
-			toast.error("Informe o valor principal tomado.");
-			return;
-		}
-
-		if (!Number.isFinite(totalContracted) || totalContracted <= 0) {
-			toast.error("Informe o limite ou total contratado.");
-			return;
-		}
-
-		if (!Number.isFinite(totalPayable) || totalPayable <= 0) {
-			toast.error("Informe o total a pagar.");
-			return;
-		}
-
-		if (
-			totalPayable <
-			principalBorrowed + totalInterest + totalCharge - 0.005
-		) {
-			toast.error(
-				"O total a pagar não pode ser menor que principal + juros + encargos.",
-			);
-			return;
-		}
-
-		if (!Number.isFinite(totalInstallments) || totalInstallments <= 0) {
-			toast.error("Informe a quantidade de parcelas.");
-			return;
-		}
-
-		if (!Number.isFinite(currentInstallment) || currentInstallment <= 0) {
-			toast.error("Informe a parcela atual.");
-			return;
-		}
-
-		const startDate = formState.startDate
-			? new Date(`${formState.startDate}T00:00:00.000Z`)
-			: null;
-		const nextDueDate = formState.nextDueDate
-			? new Date(`${formState.nextDueDate}T00:00:00.000Z`)
-			: null;
-		const endDate = formState.endDate
-			? new Date(`${formState.endDate}T00:00:00.000Z`)
-			: null;
-
-		if (!startDate || Number.isNaN(startDate.getTime())) {
-			toast.error("Informe a data inicial.");
-			return;
-		}
-
-		if (!nextDueDate || Number.isNaN(nextDueDate.getTime())) {
-			toast.error("Informe o primeiro vencimento.");
-			return;
-		}
-
-		const normalizedTotalPayable = Math.round(totalPayable * 100) / 100;
+		const { data } = parsedValues;
 		const drafts = buildLoanInstallmentPlan({
-			principalBorrowed,
-			totalInterest,
-			totalCharge,
-			totalPayable: normalizedTotalPayable,
-			totalInstallments,
-			firstDueDate: nextDueDate,
+			principalBorrowed: data.principalBorrowed,
+			totalInterest: data.totalInterest,
+			totalCharge: data.totalCharge,
+			totalPayable: data.totalPayable,
+			totalInstallments: data.totalInstallments,
+			firstDueDate: data.nextDueDate,
 		});
 
 		startTransition(async () => {
 			try {
-				const result = await createLoanOperationAction({
-					institutionId: formState.institutionId,
-					loanType: formState.loanType,
-					principalBorrowed,
-					amountReceived,
-					totalContracted,
-					totalInterest,
-					totalCharge,
-					totalPayable: normalizedTotalPayable,
-					startDate,
-					endDate,
-					nextDueDate,
-					currentInstallment,
-					totalInstallments,
-					status: formState.status,
-				});
+				const result = await createLoanOperationAction(data);
 
 				if (!result.success || !result.loanOperationId) {
 					toast.error(result.error);
@@ -361,7 +237,7 @@ export function LoanOperationDialog({
 								onChange={(event) =>
 									updateField("principalBorrowed", event.target.value)
 								}
-								placeholder="2000,00"
+								placeholder="0,00"
 								inputMode="decimal"
 							/>
 						</div>
@@ -373,7 +249,7 @@ export function LoanOperationDialog({
 								onChange={(event) =>
 									updateField("amountReceived", event.target.value)
 								}
-								placeholder="2000,00"
+								placeholder="0,00"
 								inputMode="decimal"
 							/>
 						</div>
@@ -389,7 +265,7 @@ export function LoanOperationDialog({
 								onChange={(event) =>
 									updateField("totalContracted", event.target.value)
 								}
-								placeholder="10000,00"
+								placeholder="0,00"
 								inputMode="decimal"
 							/>
 						</div>
@@ -425,7 +301,7 @@ export function LoanOperationDialog({
 								onChange={(event) =>
 									updateField("totalPayable", event.target.value)
 								}
-								placeholder="3000,00"
+								placeholder="0,00"
 								inputMode="decimal"
 							/>
 						</div>
@@ -495,7 +371,10 @@ export function LoanOperationDialog({
 							<Select
 								value={formState.status}
 								onValueChange={(value) =>
-									updateField("status", value as LoanStatus)
+									updateField(
+										"status",
+										value as LoanOperationFormValues["status"],
+									)
 								}
 							>
 								<SelectTrigger id="loan-status" className="w-full">

@@ -16,7 +16,10 @@ import {
 	createLoanOperationAction,
 	recordPaymentAction,
 } from "./actions";
-import { buildLoanDashboardData } from "./lib/dashboard";
+import {
+	buildLoanDashboardData,
+	buildLoanInstitutionSummaries,
+} from "./lib/dashboard";
 import { seedLoanTestData } from "./lib/test-support";
 import {
 	fetchInstitutionsForUser,
@@ -126,6 +129,42 @@ async function insertLoanOperation(params: {
 describe("consultas financeiras de loans", () => {
 	beforeEach(async () => {
 		await seedLoanTestData();
+	});
+
+	it("exibe instituições no dashboard com logo e fallback", async () => {
+		const { userId, institutionId } = await seedLoanTestData();
+		const logoInstitutionId = `loan-institution-logo-${randomUUID()}`;
+
+		await db.insert(institutions).values({
+			id: logoInstitutionId,
+			name: "Nubank",
+			type: "bank",
+			description: "Conta digital",
+			logo: "nubank",
+			userId,
+		});
+
+		const institutionsForUser = await fetchInstitutionsForUser(userId);
+		const loanData = await fetchLoanAccountDetails(userId);
+		const dashboard = buildLoanDashboardData({
+			institutions: institutionsForUser,
+			operations: loanData.operations,
+			installments: loanData.installments,
+			payments: loanData.payments,
+		});
+		const summaries = buildLoanInstitutionSummaries(dashboard);
+
+		expect(summaries.map((item) => item.institution.name)).toEqual(
+			expect.arrayContaining(["Banco Teste", "Nubank"]),
+		);
+		expect(
+			summaries.find((item) => item.institution.id === logoInstitutionId)
+				?.institution.logo,
+		).toBe("nubank");
+		expect(
+			summaries.find((item) => item.institution.id === institutionId)
+				?.institution.logo,
+		).toBeNull();
 	});
 
 	it("exibe total contratado do empréstimo fixo a partir do total devido", async () => {
@@ -453,6 +492,7 @@ describe("consultas financeiras de loans", () => {
 			name: "Banco Teste B",
 			type: "bank",
 			description: null,
+			logo: null,
 			userId: userB,
 		});
 

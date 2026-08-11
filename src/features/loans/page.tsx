@@ -22,10 +22,15 @@ import { formatCurrency } from "@/shared/utils/currency";
 
 import { LoanCard } from "./components/loan-card";
 import { LoanDetailPanel } from "./components/loan-detail";
+import { LoanInstitutionCard } from "./components/loan-institution-card";
 import { LoanInstitutionDialog } from "./components/loan-institution-dialog";
 import { LoanOperationDialog } from "./components/loan-operation-dialog";
 import { LoanPaymentDialog } from "./components/loan-payment-dialog";
-import type { LoanDashboardAccount, LoanDashboardData } from "./lib/dashboard";
+import {
+	buildLoanInstitutionSummaries,
+	type LoanDashboardAccount,
+	type LoanDashboardData,
+} from "./lib/dashboard";
 
 function OverviewCard({
 	label,
@@ -109,10 +114,16 @@ function LoansGroupSection({
 	);
 }
 
-export function LoansPage({ dashboard }: { dashboard: LoanDashboardData }) {
+export function LoansPage({
+	dashboard,
+	logoOptions,
+}: {
+	dashboard: LoanDashboardData;
+	logoOptions: string[];
+}) {
 	const router = useRouter();
 	const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
-		dashboard.defaultAccountId,
+		() => dashboard.defaultAccountId ?? dashboard.accounts[0]?.id ?? null,
 	);
 	const [institutionDialogOpen, setInstitutionDialogOpen] = useState(false);
 	const [operationDialogOpen, setOperationDialogOpen] = useState(false);
@@ -129,6 +140,10 @@ export function LoansPage({ dashboard }: { dashboard: LoanDashboardData }) {
 	useEffect(() => {
 		if (!dashboard.accounts.length) {
 			setSelectedAccountId(null);
+			return;
+		}
+
+		if (selectedAccountId === null) {
 			return;
 		}
 
@@ -149,6 +164,24 @@ export function LoansPage({ dashboard }: { dashboard: LoanDashboardData }) {
 		[dashboard.accounts, selectedAccountId],
 	);
 
+	const [selectedInstitutionId, setSelectedInstitutionId] = useState<
+		string | null
+	>(
+		() =>
+			selectedAccount?.institutionId ?? dashboard.institutions[0]?.id ?? null,
+	);
+
+	useEffect(() => {
+		if (selectedAccount) {
+			setSelectedInstitutionId(selectedAccount.institutionId);
+		}
+	}, [selectedAccount]);
+
+	const institutionSummaries = useMemo(
+		() => buildLoanInstitutionSummaries(dashboard),
+		[dashboard],
+	);
+
 	const revolvingAccounts = useMemo(
 		() =>
 			dashboard.accounts.filter((account) => account.loanType === "revolving"),
@@ -159,11 +192,16 @@ export function LoansPage({ dashboard }: { dashboard: LoanDashboardData }) {
 		[dashboard.accounts],
 	);
 
-	const openOperationDialog = (account?: LoanDashboardAccount | null) => {
+	const openOperationDialog = (
+		institutionId?: string | null,
+		loanType: "revolving" | "fixed" = selectedAccount?.loanType ?? "revolving",
+	) => {
 		setOperationDefaults({
 			institutionId:
-				account?.institutionId ?? selectedAccount?.institutionId ?? null,
-			loanType: account?.loanType ?? selectedAccount?.loanType ?? "revolving",
+				institutionId ??
+				selectedAccount?.institutionId ??
+				selectedInstitutionId,
+			loanType,
 		});
 		setOperationDialogOpen(true);
 	};
@@ -197,22 +235,73 @@ export function LoansPage({ dashboard }: { dashboard: LoanDashboardData }) {
 							setInstitutionDialogOpen(false);
 							router.refresh();
 						}}
+						logoOptions={logoOptions}
 						trigger={
 							<Button type="button" variant="outline">
 								<RiBankLine className="mr-2 size-4" />
-								Nova conta / linha
+								Nova instituição
 							</Button>
 						}
 					/>
 					<Button
 						type="button"
-						onClick={() => openOperationDialog(selectedAccount)}
+						onClick={() => openOperationDialog(selectedAccount?.institutionId)}
 						disabled={!dashboard.institutions.length}
 					>
 						<RiAddLine className="mr-2 size-4" />
 						Nova operação
 					</Button>
 				</div>
+			</div>
+
+			<div className="space-y-4">
+				<div className="flex flex-wrap items-end justify-between gap-3">
+					<div>
+						<h2 className="text-lg font-semibold">Instituições</h2>
+						<p className="text-sm text-muted-foreground">
+							As instituições cadastradas aparecem aqui com logo e acesso rápido
+							às operações.
+						</p>
+					</div>
+					<Badge variant="outline">
+						{dashboard.institutions.length} cadastrada(s)
+					</Badge>
+				</div>
+
+				{institutionSummaries.length === 0 ? (
+					<Card className="border-dashed bg-background/60">
+						<EmptyState
+							className="min-h-[220px] max-w-none"
+							media={<RiBankLine className="size-6 text-primary" />}
+							title="Nenhuma instituição cadastrada"
+							description="Cadastre uma instituição com logo para ela aparecer imediatamente nesta seção."
+						>
+							<Button
+								type="button"
+								onClick={() => setInstitutionDialogOpen(true)}
+							>
+								Nova instituição
+							</Button>
+						</EmptyState>
+					</Card>
+				) : (
+					<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+						{institutionSummaries.map((summary) => (
+							<LoanInstitutionCard
+								key={summary.institution.id}
+								summary={summary}
+								selected={selectedInstitutionId === summary.institution.id}
+								onClick={() => {
+									setSelectedInstitutionId(summary.institution.id);
+									setSelectedAccountId(summary.firstAccountId);
+								}}
+								onCreateOperation={() =>
+									openOperationDialog(summary.institution.id)
+								}
+							/>
+						))}
+					</div>
+				)}
 			</div>
 
 			<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -248,19 +337,19 @@ export function LoansPage({ dashboard }: { dashboard: LoanDashboardData }) {
 						className="min-h-[360px] max-w-none"
 						media={<RiBankLine className="size-6 text-primary" />}
 						title="Ainda não há empréstimos cadastrados"
-						description="Crie uma conta / linha e depois adicione operações para começar a acompanhar parcelas e pagamentos."
+						description="Crie uma instituição e depois adicione operações para começar a acompanhar parcelas e pagamentos."
 					>
 						<div className="flex flex-wrap gap-2">
 							<Button
 								type="button"
 								onClick={() => setInstitutionDialogOpen(true)}
 							>
-								Nova conta / linha
+								Nova instituição
 							</Button>
 							<Button
 								type="button"
 								variant="outline"
-								onClick={() => openOperationDialog(null)}
+								onClick={() => openOperationDialog()}
 								disabled={!dashboard.institutions.length}
 							>
 								Nova operação
@@ -277,7 +366,9 @@ export function LoansPage({ dashboard }: { dashboard: LoanDashboardData }) {
 							accounts={revolvingAccounts}
 							selectedAccountId={selectedAccountId}
 							onSelectAccount={setSelectedAccountId}
-							onCreateOperation={openOperationDialog}
+							onCreateOperation={(account) =>
+								openOperationDialog(account.institutionId, account.loanType)
+							}
 						/>
 
 						<LoansGroupSection
@@ -286,14 +377,21 @@ export function LoansPage({ dashboard }: { dashboard: LoanDashboardData }) {
 							accounts={fixedAccounts}
 							selectedAccountId={selectedAccountId}
 							onSelectAccount={setSelectedAccountId}
-							onCreateOperation={openOperationDialog}
+							onCreateOperation={(account) =>
+								openOperationDialog(account.institutionId, account.loanType)
+							}
 						/>
 					</div>
 
 					<div className="space-y-6">
 						<LoanDetailPanel
 							account={selectedAccount}
-							onCreateOperation={() => openOperationDialog(selectedAccount)}
+							onCreateOperation={() =>
+								openOperationDialog(
+									selectedAccount?.institutionId,
+									selectedAccount?.loanType,
+								)
+							}
 							onRegisterPayment={(installmentId) => {
 								if (!selectedAccount) return;
 								openPaymentDialog(selectedAccount.id, installmentId);

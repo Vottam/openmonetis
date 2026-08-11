@@ -1133,6 +1133,7 @@ export const institutions = pgTable("institutions", {
 	name: text("name").notNull(),
 	type: text("type").notNull(),
 	description: text("description"),
+	logo: text("logo"),
 	userId: text("user_id")
 		.notNull()
 		.references(() => user.id, { onDelete: "cascade" }),

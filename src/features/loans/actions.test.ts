@@ -4,12 +4,14 @@ import { loanInstallments, loanOperations, loanPayments } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import {
 	createInstallmentAction,
+	createLoanInstitutionAction,
 	createLoanOperationAction,
 	recordPaymentAction,
 	updateLoanOperationAction,
 	updatePaymentStatusAction,
 } from "./actions";
 import { seedLoanTestData } from "./lib/test-support";
+import { fetchInstitutionsForUser } from "./queries";
 
 function baseOperationInput(institutionId: string) {
 	return {
@@ -41,6 +43,30 @@ function assertDefined<T>(value: T | null | undefined, message: string): T {
 describe("ações de loans", () => {
 	beforeEach(async () => {
 		await seedLoanTestData();
+	});
+
+	it("persiste logo canônico e nome derivado ao cadastrar uma instituição", async () => {
+		const { userId } = await seedLoanTestData();
+
+		const result = await createLoanInstitutionAction({
+			name: "Nubank",
+			type: "bank",
+			description: "Conta digital",
+			logo: "nubank",
+		});
+
+		expect(result.success).toBe(true);
+
+		const institutions = await fetchInstitutionsForUser(userId);
+		expect(institutions).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: "Nubank",
+					logo: "nubank",
+					type: "bank",
+				}),
+			]),
+		);
 	});
 
 	it("cria operação e parcela com datas e valores persistidos", async () => {

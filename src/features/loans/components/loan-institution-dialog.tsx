@@ -1,8 +1,16 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useTransition } from "react";
+import {
+	type FormEvent,
+	type ReactNode,
+	useEffect,
+	useMemo,
+	useState,
+	useTransition,
+} from "react";
 import { toast } from "sonner";
 import { createLoanInstitutionAction } from "@/features/loans/actions";
+import { useLogoSelection } from "@/shared/components/logo-picker/use-logo-selection";
 import { Button } from "@/shared/components/ui/button";
 import {
 	Dialog,
@@ -16,27 +24,30 @@ import {
 import { useControlledState } from "@/shared/hooks/use-controlled-state";
 import { useFormState } from "@/shared/hooks/use-form-state";
 
-import { InstitutionFormFields } from "./institution-form-fields";
-import type { LoanInstitutionFormValues } from "./types";
+import {
+	buildLoanInstitutionInitialValues,
+	type LoanInstitutionFormValues,
+} from "../lib/form-values";
+
+import {
+	type InstitutionEntryMode,
+	InstitutionFormFields,
+} from "./institution-form-fields";
 
 interface LoanInstitutionDialogProps {
 	trigger?: ReactNode;
 	open?: boolean;
 	onOpenChange?: (open: boolean) => void;
 	onSuccess?: () => void;
+	logoOptions: string[];
 }
-
-const INITIAL_STATE: LoanInstitutionFormValues = {
-	name: "",
-	type: "bank",
-	description: "",
-};
 
 export function LoanInstitutionDialog({
 	trigger,
 	open,
 	onOpenChange,
 	onSuccess,
+	logoOptions,
 }: LoanInstitutionDialogProps) {
 	const [isPending, startTransition] = useTransition();
 	const [dialogOpen, setDialogOpen] = useControlledState(
@@ -44,30 +55,62 @@ export function LoanInstitutionDialog({
 		false,
 		onOpenChange,
 	);
+	const [logoDialogOpen, setLogoDialogOpen] = useState(false);
+	const [entryMode, setEntryMode] = useState<InstitutionEntryMode>("visual");
 
-	const initialState = useMemo(() => INITIAL_STATE, []);
-	const { formState, resetForm, updateField } =
+	const initialState = useMemo(() => buildLoanInstitutionInitialValues(), []);
+	const { formState, resetForm, updateField, updateFields } =
 		useFormState<LoanInstitutionFormValues>(initialState);
 
 	useEffect(() => {
 		if (dialogOpen) {
 			resetForm(initialState);
+			setEntryMode("visual");
+			setLogoDialogOpen(false);
 		}
 	}, [dialogOpen, initialState, resetForm]);
 
-	const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+	const handleLogoSelection = useLogoSelection({
+		mode: "create",
+		currentLogo: formState.logo,
+		currentName: formState.name,
+		onUpdate: (updates) => {
+			updateFields(updates);
+			requestAnimationFrame(() => {
+				setLogoDialogOpen(false);
+			});
+		},
+	});
+
+	const handleEntryModeChange = (mode: InstitutionEntryMode) => {
+		setEntryMode(mode);
+		if (mode === "manual") {
+			updateField("logo", "");
+		}
+	};
+
+	const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 
-		const payload = {
-			name: formState.name.trim(),
-			type: formState.type,
-			description: formState.description.trim(),
-		};
+		const name = formState.name.trim();
+		if (entryMode === "visual" && !formState.logo.trim()) {
+			toast.error(
+				"Selecione uma instituição na biblioteca ou cadastre manualmente.",
+			);
+			return;
+		}
 
-		if (!payload.name) {
+		if (!name) {
 			toast.error("Informe o nome da instituição.");
 			return;
 		}
+
+		const payload = {
+			name,
+			type: formState.type,
+			description: formState.description.trim(),
+			logo: entryMode === "visual" ? formState.logo.trim() : "",
+		};
 
 		startTransition(async () => {
 			try {
@@ -90,16 +133,26 @@ export function LoanInstitutionDialog({
 	return (
 		<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
 			{trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
-			<DialogContent className="sm:max-w-lg">
+			<DialogContent className="sm:max-w-2xl">
 				<DialogHeader>
-					<DialogTitle>Nova conta / linha</DialogTitle>
+					<DialogTitle>Nova instituição</DialogTitle>
 					<DialogDescription>
-						Cadastre a instituição que vai agrupar suas operações de empréstimo.
+						Escolha um logo da biblioteca nativa ou cadastre a instituição
+						manualmente quando ela não estiver disponível.
 					</DialogDescription>
 				</DialogHeader>
 
 				<form className="space-y-5" onSubmit={handleSubmit}>
-					<InstitutionFormFields values={formState} onChange={updateField} />
+					<InstitutionFormFields
+						values={formState}
+						onChange={updateField}
+						logoOptions={logoOptions}
+						logoDialogOpen={logoDialogOpen}
+						onLogoDialogOpenChange={setLogoDialogOpen}
+						onSelectLogo={handleLogoSelection}
+						entryMode={entryMode}
+						onEntryModeChange={handleEntryModeChange}
+					/>
 
 					<DialogFooter>
 						<Button
@@ -111,7 +164,7 @@ export function LoanInstitutionDialog({
 							Cancelar
 						</Button>
 						<Button type="submit" disabled={isPending}>
-							{isPending ? "Salvando..." : "Salvar"}
+							{isPending ? "Salvando..." : "Salvar instituição"}
 						</Button>
 					</DialogFooter>
 				</form>

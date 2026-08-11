@@ -80,6 +80,13 @@ export type LoanDashboardData = {
 	defaultAccountId: string | null;
 };
 
+export type LoanInstitutionSummary = {
+	institution: LoanInstitution;
+	accountCount: number;
+	operationCount: number;
+	firstAccountId: string | null;
+};
+
 type DashboardSourceData = {
 	institutions: LoanInstitution[];
 	operations: LoanOperation[];
@@ -469,6 +476,38 @@ export function buildLoanDashboardData(
 		totals,
 		defaultAccountId: accounts[0]?.id ?? null,
 	};
+}
+
+export function buildLoanInstitutionSummaries(source: {
+	institutions: LoanInstitution[];
+	accounts: LoanDashboardAccount[];
+}): LoanInstitutionSummary[] {
+	const accountMap = new Map<string, LoanDashboardAccount[]>();
+
+	for (const account of source.accounts) {
+		const current = accountMap.get(account.institutionId) ?? [];
+		current.push(account);
+		accountMap.set(account.institutionId, current);
+	}
+
+	return [...source.institutions]
+		.sort((left, right) =>
+			left.name.localeCompare(right.name, "pt-BR", {
+				sensitivity: "base",
+			}),
+		)
+		.map((institution) => {
+			const institutionAccounts = accountMap.get(institution.id) ?? [];
+			return {
+				institution,
+				accountCount: institutionAccounts.length,
+				operationCount: institutionAccounts.reduce(
+					(total, account) => total + account.operations.length,
+					0,
+				),
+				firstAccountId: institutionAccounts[0]?.id ?? null,
+			};
+		});
 }
 
 export function formatLoanNextDueDate(value: string | Date | null | undefined) {
