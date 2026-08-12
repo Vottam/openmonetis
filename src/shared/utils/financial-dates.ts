@@ -165,3 +165,15 @@ export function buildRelativeDueDateInfoFromPeriodDay(
 		date: dueDate,
 	};
 }
+
+// ADD: Missing export that horizon.ts imports
+export function buildBusinessDueDateFromPeriodDay(
+	period: string,
+	dueDay: string,
+): string | null {
+	const result = buildDueDateInfoFromPeriodDay(period, dueDay);
+	return result.date ?? null;
+}
+
+// Re-export business day helper needed by payables horizon
+export { adjustDateToNextBusinessDay } from "@/shared/utils/date";
