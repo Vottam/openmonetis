@@ -248,9 +248,11 @@
 			"breakpoints": true
 		},
 		{
-			"id": "0036_accounts_payable_phase_a",
-			"version": 8,
-			"tables_created": ["accounts_payable", "accounts_payable_occurrences"]
+			"idx": 36,
+			"version": "7",
+			"when": 1786506690000,
+			"tag": "0036_accounts_payable_phase_a",
+			"breakpoints": true
 		}
 	]
 }
