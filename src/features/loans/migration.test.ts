@@ -36,7 +36,10 @@ const SNAPSHOT = JSON.parse(readFileSync(SNAPSHOT_PATH, "utf8")) as {
 };
 
 const JOURNAL_MIGRATIONS = JOURNAL.entries
-	.filter((entry) => entry.tag !== "0035_ambiguous_vulcan")
+	.filter(
+		(entry): entry is { tag: string } =>
+			typeof entry.tag === "string" && entry.tag !== "0035_ambiguous_vulcan",
+	)
 	.map((entry) => ({
 		tag: entry.tag,
 		path: resolve(DRIZZLE_DIR, `${entry.tag}.sql`),
