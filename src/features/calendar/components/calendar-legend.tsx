@@ -9,6 +9,7 @@ const LEGEND_ITEMS = [
 	{ label: "Parcelas", ...EVENT_TYPE_STYLES.installment },
 	{ label: "Boletos", ...EVENT_TYPE_STYLES.boleto },
 	{ label: "Fatura de Cartão", ...EVENT_TYPE_STYLES.card },
+	{ label: "Contas a pagar", ...EVENT_TYPE_STYLES.payable },
 ];
 
 export function CalendarLegend() {

@@ -1306,3 +1306,74 @@ export const loanOperationsRelations = relations(
 		payments: many(loanPayments),
 	}),
 );
+
+// ===================== ACCOUNTS PAYABLE (Phase A) =====================
+export const accountsPayable = pgTable("accounts_payable", {
+	id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+	userId: text("user_id")
+		.notNull()
+		.references(() => user.id, { onDelete: "cascade" }),
+	description: text("description").notNull(),
+	supplierName: text("supplier_name").notNull(),
+	categoryId: uuid("category_id").references(() => categories.id, {
+		onDelete: "set null",
+	}),
+	recurrenceType: text("recurrence_type").notNull(),
+	defaultAmount: numeric("default_amount", { precision: 12, scale: 2 }),
+	dueDay: smallint("due_day"),
+	startsAt: date("starts_at").notNull(),
+	endsAt: date("ends_at"),
+	status: text("status").default("active").notNull(),
+	createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+		.defaultNow()
+		.notNull(),
+	updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+		.defaultNow()
+		.notNull(),
+});
+
+export const accountsPayableOccurrences = pgTable(
+	"accounts_payable_occurrences",
+	{
+		id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+		payableId: uuid("payable_id")
+			.notNull()
+			.references(() => accountsPayable.id, { onDelete: "cascade" }),
+		period: text("period").notNull(),
+		dueDate: date("due_date").notNull(),
+		expectedAmount: numeric("expected_amount", { precision: 12, scale: 2 }),
+		actualAmount: numeric("actual_amount", { precision: 12, scale: 2 }),
+		status: text("status").default("pending").notNull(),
+		createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+			.defaultNow()
+			.notNull(),
+		updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+			.defaultNow()
+			.notNull(),
+	},
+);
+
+export const accountsPayableRelations = relations(
+	accountsPayable,
+	({ one, many }) => ({
+		user: one(user, {
+			fields: [accountsPayable.userId],
+			references: [user.id],
+		}),
+		category: one(categories, {
+			fields: [accountsPayable.categoryId],
+			references: [categories.id],
+		}),
+		occurrences: many(accountsPayableOccurrences),
+	}),
+);
+
+export const accountsPayableOccurrencesRelations = relations(
+	accountsPayableOccurrences,
+	({ one }) => ({
+		payable: one(accountsPayable, {
+			fields: [accountsPayableOccurrences.payableId],
+			references: [accountsPayable.id],
+		}),
+	}),
+);

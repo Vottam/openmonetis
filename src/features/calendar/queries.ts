@@ -1,5 +1,6 @@
 import { and, eq, gte, lte, ne, or, sql } from "drizzle-orm";
 import { cards, transactions } from "@/db/schema";
+import { fetchPayableCalendarEvents } from "@/features/payables/queries";
 import {
 	buildOptionSets,
 	buildSluggedFilters,
@@ -48,43 +49,45 @@ export const fetchCalendarData = async ({
 	const rangeEndKey = formatDateKey(rangeEnd);
 	const adminPayerId = await getAdminPayerId(userId);
 
-	const [transactionRows, cardRows, filterSources] = await Promise.all([
-		db.query.transactions.findMany({
-			where: and(
-				eq(transactions.userId, userId),
-				adminPayerId ? eq(transactions.payerId, adminPayerId) : sql`false`,
-				ne(transactions.transactionType, TRANSACTION_TYPE_TRANSFERENCIA),
-				or(
-					// Lançamentos cuja data de compra esteja no período do calendário
-					and(
-						gte(transactions.purchaseDate, rangeStart),
-						lte(transactions.purchaseDate, rangeEnd),
-					),
-					// Boletos cuja data de vencimento esteja no período do calendário
-					and(
-						eq(transactions.paymentMethod, PAYMENT_METHOD_BOLETO),
-						gte(transactions.dueDate, rangeStart),
-						lte(transactions.dueDate, rangeEnd),
-					),
-					// Lançamentos de cartão do período (para calcular totais de vencimento)
-					and(
-						eq(transactions.period, period),
-						ne(transactions.paymentMethod, PAYMENT_METHOD_BOLETO),
+	const [transactionRows, cardRows, filterSources, payableEvents] =
+		await Promise.all([
+			db.query.transactions.findMany({
+				where: and(
+					eq(transactions.userId, userId),
+					adminPayerId ? eq(transactions.payerId, adminPayerId) : sql`false`,
+					ne(transactions.transactionType, TRANSACTION_TYPE_TRANSFERENCIA),
+					or(
+						// Lançamentos cuja data de compra esteja no período do calendário
+						and(
+							gte(transactions.purchaseDate, rangeStart),
+							lte(transactions.purchaseDate, rangeEnd),
+						),
+						// Boletos cuja data de vencimento esteja no período do calendário
+						and(
+							eq(transactions.paymentMethod, PAYMENT_METHOD_BOLETO),
+							gte(transactions.dueDate, rangeStart),
+							lte(transactions.dueDate, rangeEnd),
+						),
+						// Lançamentos de cartão do período (para calcular totais de vencimento)
+						and(
+							eq(transactions.period, period),
+							ne(transactions.paymentMethod, PAYMENT_METHOD_BOLETO),
+						),
 					),
 				),
-			),
-			with: {
-				payer: true,
-				financialAccount: true,
-				card: true,
-				category: true,
-			},
-		}),
-		db.query.cards.findMany({
-			where: eq(cards.userId, userId),
-		}),
-		fetchTransactionFilterSources(userId),
-	]);
+				with: {
+					payer: true,
+					financialAccount: true,
+					card: true,
+					category: true,
+				},
+			}),
+			db.query.cards.findMany({
+				where: eq(cards.userId, userId),
+			}),
+			fetchTransactionFilterSources(userId),
+			fetchPayableCalendarEvents(userId, period),
+		]);
 
 	const transactionData = mapTransactionsData(transactionRows);
 	const events: CalendarEvent[] = [];
@@ -172,7 +175,7 @@ export const fetchCalendarData = async ({
 		return !seriesId || !groupedSeriesIds.has(seriesId);
 	});
 
-	const allEvents = [...baseEvents, ...installmentEvents];
+	const allEvents = [...baseEvents, ...installmentEvents, ...payableEvents];
 
 	// Vencimentos de cartões com lançamentos no período
 	for (const card of cardRows) {
@@ -212,7 +215,8 @@ export const fetchCalendarData = async ({
 		transaction: 0,
 		installment: 0,
 		boleto: 1,
-		card: 2,
+		payable: 2,
+		card: 3,
 	};
 
 	allEvents.sort((a, b) => {

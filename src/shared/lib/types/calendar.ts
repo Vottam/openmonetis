@@ -1,4 +1,9 @@
 import type {
+	PayableOccurrenceStatus,
+	PayableRecurrenceType,
+	PayableStatus,
+} from "@/features/payables/lib/types";
+import type {
 	SelectOption,
 	TransactionItem,
 } from "@/features/transactions/components/types";
@@ -39,6 +44,25 @@ export type CalendarEvent =
 				totalDue: number | null;
 				isPaid: boolean;
 				paymentDate: string | null;
+			};
+	  }
+	| {
+			id: string;
+			type: "payable";
+			date: string;
+			payable: {
+				id: string;
+				description: string;
+				supplierName: string;
+				categoryName: string | null;
+				recurrenceType: PayableRecurrenceType;
+				payableStatus: PayableStatus;
+				occurrenceStatus: PayableOccurrenceStatus;
+				expectedAmount: number | null;
+				actualAmount: number | null;
+				isOverdue: boolean;
+				period: string;
+				dueDate: string;
 			};
 	  };
 

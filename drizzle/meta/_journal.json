@@ -246,6 +246,11 @@
 			"when": 1786462121525,
 			"tag": "0035_ambiguous_vulcan",
 			"breakpoints": true
+		},
+		{
+			"id": "0036_accounts_payable_phase_a",
+			"version": 8,
+			"tables_created": ["accounts_payable", "accounts_payable_occurrences"]
 		}
 	]
 }

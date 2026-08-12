@@ -154,6 +154,47 @@ const renderCard = (event: Extract<CalendarEvent, { type: "card" }>) => {
 	);
 };
 
+const renderPayable = (event: Extract<CalendarEvent, { type: "payable" }>) => {
+	const amountLabel =
+		event.payable.expectedAmount !== null
+			? new Intl.NumberFormat("pt-BR", {
+					style: "currency",
+					currency: "BRL",
+				}).format(event.payable.expectedAmount)
+			: event.payable.occurrenceStatus === "awaiting_amount"
+				? "Aguardando valor"
+				: "Sem valor";
+
+	return (
+		<EventCard type="payable">
+			<div className="flex items-start justify-between gap-3">
+				<div className="flex flex-col gap-1">
+					<span className="text-sm font-medium leading-tight">
+						{event.payable.description}
+					</span>
+					<span className="text-xs text-muted-foreground">
+						{event.payable.supplierName}
+						{event.payable.categoryName
+							? ` · ${event.payable.categoryName}`
+							: ""}
+					</span>
+					<Badge variant="outline">{event.payable.occurrenceStatus}</Badge>
+				</div>
+				<div className="flex flex-col items-end gap-0.5">
+					<span className="font-medium whitespace-nowrap">{amountLabel}</span>
+					<span className="text-xs text-muted-foreground">
+						{formatFinancialDateLabel(
+							event.payable.dueDate,
+							"Vence em",
+							DATE_FORMAT,
+						)}
+					</span>
+				</div>
+			</div>
+		</EventCard>
+	);
+};
+
 const renderInstallment = (
 	event: Extract<CalendarEvent, { type: "installment" }>,
 ) => {
@@ -189,6 +230,7 @@ const SECTION_LABELS: Record<CalendarEvent["type"], string> = {
 	installment: "Parcelas",
 	boleto: "Boletos",
 	card: "Faturas",
+	payable: "Contas a pagar",
 };
 
 const renderEvent = (event: CalendarEvent) => {
@@ -201,6 +243,8 @@ const renderEvent = (event: CalendarEvent) => {
 			return renderBoleto(event);
 		case "card":
 			return renderCard(event);
+		case "payable":
+			return renderPayable(event);
 		default:
 			return null;
 	}

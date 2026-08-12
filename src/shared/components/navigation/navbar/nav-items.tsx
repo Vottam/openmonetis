@@ -91,6 +91,13 @@ export const NAV_SECTIONS: NavSection[] = [
 				iconClass: "text-primary",
 			},
 			{
+				href: "/payables",
+				label: "Contas a pagar",
+				description: "Obrigações e recorrências",
+				icon: <RiSecurePaymentLine className="size-4" />,
+				iconClass: "text-primary",
+			},
+			{
 				href: "/dashboard/loans",
 				label: "Empréstimos",
 				description: "Créditos, parcelas e limites",
