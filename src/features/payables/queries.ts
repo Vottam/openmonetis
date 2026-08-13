@@ -2,7 +2,9 @@ import { and, asc, eq, ne } from "drizzle-orm";
 import {
 	accountsPayable,
 	accountsPayableOccurrences,
+	cards,
 	categories,
+	financialAccounts,
 } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import { getBusinessDateString } from "@/shared/utils/date";
@@ -11,10 +13,16 @@ import {
 	buildPayableOccurrenceSeeds,
 	isPayableOccurrenceOverdue,
 } from "./lib/horizon";
+import {
+	derivePayableOccurrenceStatus,
+	getPayableRemainingAmount,
+	sumPayablePaymentAmounts,
+} from "./lib/payments";
 import type {
 	Payable,
 	PayableOccurrence,
 	PayableOccurrenceStatus,
+	PayablePayment,
 	PayableRecurrenceType,
 	PayableStatus,
 	PayablesPageData,
@@ -68,6 +76,43 @@ function mapPayable(row: {
 	};
 }
 
+function mapPayment(row: {
+	id: string;
+	occurrenceId: string;
+	transactionId: string;
+	amount: unknown;
+	paidAt: Date;
+	paymentMethod: string;
+	accountId: string | null;
+	account: { name: string | null } | null;
+	cardId: string | null;
+	card: { name: string | null } | null;
+	categoryId: string | null;
+	category: { name: string | null } | null;
+	transaction: { name: string | null; period: string | null } | null;
+	createdAt: Date;
+	updatedAt: Date;
+}): PayablePayment {
+	return {
+		id: row.id,
+		occurrenceId: row.occurrenceId,
+		transactionId: row.transactionId,
+		amount: toNumber(row.amount) ?? 0,
+		paidAt: row.paidAt.toISOString(),
+		paymentMethod: row.paymentMethod,
+		accountId: row.accountId,
+		accountName: row.account?.name ?? null,
+		cardId: row.cardId,
+		cardName: row.card?.name ?? null,
+		categoryId: row.categoryId,
+		categoryName: row.category?.name ?? null,
+		transactionName: row.transaction?.name ?? null,
+		transactionPeriod: row.transaction?.period ?? null,
+		createdAt: row.createdAt.toISOString(),
+		updatedAt: row.updatedAt.toISOString(),
+	};
+}
+
 function mapOccurrence(row: {
 	id: string;
 	payableId: string;
@@ -78,19 +123,55 @@ function mapOccurrence(row: {
 	status: string;
 	createdAt: Date;
 	updatedAt: Date;
+	payments: Array<{
+		id: string;
+		occurrenceId: string;
+		transactionId: string;
+		amount: unknown;
+		paidAt: Date;
+		paymentMethod: string;
+		accountId: string | null;
+		account: { name: string | null } | null;
+		cardId: string | null;
+		card: { name: string | null } | null;
+		categoryId: string | null;
+		category: { name: string | null } | null;
+		transaction: { name: string | null; period: string | null } | null;
+		createdAt: Date;
+		updatedAt: Date;
+	}>;
 }): PayableOccurrence {
 	const dueDate = row.dueDate;
 	const reference = getBusinessDateString();
 	const status = row.status as PayableOccurrenceStatus;
+	const payments = row.payments.map(mapPayment);
+	const paidAmount = sumPayablePaymentAmounts(payments);
+	const expectedAmount = toNumber(row.expectedAmount);
+	const actualAmount = toNumber(row.actualAmount);
+	const remainingAmount = getPayableRemainingAmount({
+		expectedAmount,
+		paidAmount,
+	});
+	const derivedStatus = derivePayableOccurrenceStatus({
+		expectedAmount,
+		paidAmount,
+		currentStatus: status,
+	});
 	return {
 		id: row.id,
 		payableId: row.payableId,
 		period: row.period,
 		dueDate,
-		expectedAmount: toNumber(row.expectedAmount),
-		actualAmount: toNumber(row.actualAmount),
-		status,
-		isOverdue: isPayableOccurrenceOverdue({ status, dueDate }, reference),
+		expectedAmount,
+		actualAmount,
+		paidAmount,
+		remainingAmount,
+		status: derivedStatus,
+		isOverdue: isPayableOccurrenceOverdue(
+			{ status: derivedStatus, dueDate },
+			reference,
+		),
+		payments,
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
 	};
@@ -160,7 +241,7 @@ export async function fetchPayablesPageData(
 	userId: string,
 ): Promise<PayablesPageData> {
 	await ensurePayableOccurrenceHorizon(userId);
-	const [payableRows, categoryRows] = await Promise.all([
+	const [payableRows, categoryRows, accountRows, cardRows] = await Promise.all([
 		db.query.accountsPayable.findMany({
 			where: eq(accountsPayable.userId, userId),
 			with: {
@@ -170,6 +251,22 @@ export async function fetchPayablesPageData(
 						ascOrder(occurrence.dueDate),
 						ascOrder(occurrence.period),
 					],
+					with: {
+						payments: {
+							orderBy: (payment, { asc: ascOrder }) => [
+								ascOrder(payment.paidAt),
+								ascOrder(payment.createdAt),
+							],
+							with: {
+								account: { columns: { name: true } },
+								card: { columns: { name: true } },
+								category: { columns: { name: true } },
+								transaction: {
+									columns: { name: true, period: true },
+								},
+							},
+						},
+					},
 				},
 			},
 			orderBy: (payable, { asc: ascOrder, desc: descOrder }) => [
@@ -182,6 +279,16 @@ export async function fetchPayablesPageData(
 			.from(categories)
 			.where(eq(categories.userId, userId))
 			.orderBy(asc(categories.name)),
+		db.query.financialAccounts.findMany({
+			columns: { id: true, name: true },
+			where: eq(financialAccounts.userId, userId),
+			orderBy: (account, { asc: ascOrder }) => [ascOrder(account.name)],
+		}),
+		db.query.cards.findMany({
+			columns: { id: true, name: true },
+			where: eq(cards.userId, userId),
+			orderBy: (card, { asc: ascOrder }) => [ascOrder(card.name)],
+		}),
 	]);
 
 	const payables = payableRows.map((row) => ({
@@ -195,6 +302,14 @@ export async function fetchPayablesPageData(
 		categories: categoryRows.map((category) => ({
 			value: category.id,
 			label: category.name,
+		})),
+		accountOptions: accountRows.map((account) => ({
+			value: account.id,
+			label: account.name,
+		})),
+		cardOptions: cardRows.map((card) => ({
+			value: card.id,
+			label: card.name,
 		})),
 		today: getBusinessDateString(),
 	};

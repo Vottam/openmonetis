@@ -10,6 +10,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { PAYMENT_METHODS } from "@/features/transactions/lib/constants";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import { EmptyState } from "@/shared/components/feedback/empty-state";
 import { Badge } from "@/shared/components/ui/badge";
@@ -44,6 +45,7 @@ import { cn } from "@/shared/utils/ui";
 import {
 	cancelPayableAction,
 	createPayableAction,
+	createPayablePaymentAction,
 	deletePayableAction,
 	informOccurrenceAmountAction,
 	updatePayableAction,
@@ -51,6 +53,7 @@ import {
 import type {
 	Payable,
 	PayableOccurrence,
+	PayablePaymentFormState,
 	PayableRecurrenceType,
 	PayablesPageData,
 	PayableWithOccurrences,
@@ -146,6 +149,22 @@ function formatOccurrenceTitle(occurrence: PayableOccurrence): string {
 	}
 
 	return "Sem valor";
+}
+
+function buildPaymentFormState(
+	occurrence: PayableOccurrence | null,
+	data: PayablesPageData,
+): PayablePaymentFormState {
+	const defaultAmount =
+		occurrence?.remainingAmount ?? occurrence?.expectedAmount ?? 0;
+	return {
+		amount: defaultAmount > 0 ? String(defaultAmount) : "",
+		paymentMethod: "Pix",
+		accountId: data.accountOptions[0]?.value ?? "",
+		cardId: data.cardOptions[0]?.value ?? "",
+		paidAt: data.today,
+		idempotencyKey: globalThis.crypto.randomUUID(),
+	};
 }
 
 function buildInitialFormState(
@@ -475,6 +494,7 @@ function PayableDetailDialog({
 	onCancel,
 	onDelete,
 	onInformAmount,
+	onPay,
 }: {
 	open: boolean;
 	payable: PayableWithOccurrences | null;
@@ -483,6 +503,7 @@ function PayableDetailDialog({
 	onCancel: (payable: PayableWithOccurrences) => void;
 	onDelete: (payable: PayableWithOccurrences) => void;
 	onInformAmount: (occurrence: PayableOccurrence) => void;
+	onPay: (occurrence: PayableOccurrence) => void;
 }) {
 	if (!payable) {
 		return null;
@@ -594,6 +615,17 @@ function PayableDetailDialog({
 														Informar valor
 													</Button>
 												) : null}
+												{occurrence.status === "pending" ||
+												occurrence.status === "partial" ? (
+													<Button
+														type="button"
+														size="sm"
+														variant="default"
+														onClick={() => onPay(occurrence)}
+													>
+														Pagar
+													</Button>
+												) : null}
 											</div>
 										</div>
 									);
@@ -629,6 +661,207 @@ function PayableDetailDialog({
 					>
 						<RiDeleteBin5Line className="size-4" />
 						Remover
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+function PayablePaymentDialog({
+	open,
+	occurrence,
+	payable,
+	data,
+	onOpenChange,
+	onSaved,
+}: {
+	open: boolean;
+	occurrence: PayableOccurrence | null;
+	payable: PayableWithOccurrences | null;
+	data: PayablesPageData;
+	onOpenChange: (open: boolean) => void;
+	onSaved: () => void;
+}) {
+	const [form, setForm] = useState<PayablePaymentFormState>(() =>
+		buildPaymentFormState(occurrence, data),
+	);
+	const [isPending, startTransition] = useTransition();
+	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+	const visible = open && !!occurrence && !!payable;
+
+	useEffect(() => {
+		if (visible) {
+			setForm(buildPaymentFormState(occurrence, data));
+			setErrorMessage(null);
+		}
+	}, [visible, occurrence, data]);
+
+	const submit = async () => {
+		const normalizedAmount = normalizeDecimalInput(form.amount);
+		const amount = normalizedAmount ? Number(normalizedAmount) : NaN;
+		if (!Number.isFinite(amount) || amount <= 0) {
+			setErrorMessage("Informe um valor válido.");
+			return;
+		}
+
+		startTransition(async () => {
+			const result = await createPayablePaymentAction({
+				occurrenceId: occurrence?.id ?? "",
+				amount,
+				paymentMethod: form.paymentMethod,
+				accountId:
+					form.paymentMethod === "Cartão de crédito"
+						? null
+						: form.accountId || null,
+				cardId:
+					form.paymentMethod === "Cartão de crédito"
+						? form.cardId || null
+						: null,
+				paidAt: form.paidAt,
+				idempotencyKey: form.idempotencyKey,
+			});
+
+			if (!result.success) {
+				setErrorMessage(result.error);
+				toast.error(result.error);
+				return;
+			}
+
+			toast.success(result.message);
+			onSaved();
+			onOpenChange(false);
+		});
+	};
+
+	const usingCard = form.paymentMethod === "Cartão de crédito";
+
+	return (
+		<Dialog open={visible} onOpenChange={onOpenChange}>
+			<DialogContent className="max-w-2xl">
+				<DialogHeader>
+					<DialogTitle>Pagar conta</DialogTitle>
+					<DialogDescription>
+						{payable ? payable.payable.description : "Conta a pagar"} ·{" "}
+						{occurrence?.period}
+					</DialogDescription>
+				</DialogHeader>
+				<div className="grid gap-4 md:grid-cols-2">
+					<div className="space-y-2 md:col-span-2">
+						<Label htmlFor="payable-payment-amount">Valor</Label>
+						<Input
+							id="payable-payment-amount"
+							value={form.amount}
+							onChange={(event) =>
+								setForm((current) => ({
+									...current,
+									amount: event.target.value,
+								}))
+							}
+							placeholder="0,00"
+						/>
+					</div>
+					<div className="space-y-2">
+						<Label>Forma de pagamento</Label>
+						<Select
+							value={form.paymentMethod}
+							onValueChange={(value) =>
+								setForm((current) => ({ ...current, paymentMethod: value }))
+							}
+						>
+							<SelectTrigger>
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								{PAYMENT_METHODS.map((method) => (
+									<SelectItem key={method} value={method}>
+										{method}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</div>
+					{usingCard ? (
+						<div className="space-y-2">
+							<Label>Cartão</Label>
+							<Select
+								value={form.cardId || "none"}
+								onValueChange={(value) =>
+									setForm((current) => ({
+										...current,
+										cardId: value === "none" ? "" : value,
+									}))
+								}
+							>
+								<SelectTrigger>
+									<SelectValue placeholder="Selecione" />
+								</SelectTrigger>
+								<SelectContent>
+									{data.cardOptions.map((card) => (
+										<SelectItem key={card.value} value={card.value}>
+											{card.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+					) : (
+						<div className="space-y-2">
+							<Label>Conta</Label>
+							<Select
+								value={form.accountId || "none"}
+								onValueChange={(value) =>
+									setForm((current) => ({
+										...current,
+										accountId: value === "none" ? "" : value,
+									}))
+								}
+							>
+								<SelectTrigger>
+									<SelectValue placeholder="Selecione" />
+								</SelectTrigger>
+								<SelectContent>
+									{data.accountOptions.map((account) => (
+										<SelectItem key={account.value} value={account.value}>
+											{account.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+					)}
+					<div className="space-y-2">
+						<Label htmlFor="payable-payment-date">Data</Label>
+						<Input
+							id="payable-payment-date"
+							type="date"
+							value={form.paidAt}
+							onChange={(event) =>
+								setForm((current) => ({
+									...current,
+									paidAt: event.target.value,
+								}))
+							}
+						/>
+					</div>
+				</div>
+				{errorMessage ? (
+					<p className="text-sm text-destructive">{errorMessage}</p>
+				) : null}
+				<DialogFooter>
+					<Button
+						type="button"
+						variant="outline"
+						onClick={() => onOpenChange(false)}
+					>
+						Cancelar
+					</Button>
+					<Button
+						type="button"
+						onClick={() => void submit()}
+						disabled={isPending}
+					>
+						{isPending ? "Salvando..." : "Pagar"}
 					</Button>
 				</DialogFooter>
 			</DialogContent>
@@ -745,6 +978,10 @@ export function PayablesPage({ data }: { data: PayablesPageData }) {
 	const [cancelTarget, setCancelTarget] =
 		useState<PayableWithOccurrences | null>(null);
 	const [informTarget, setInformTarget] = useState<{
+		payable: PayableWithOccurrences | null;
+		occurrence: PayableOccurrence;
+	} | null>(null);
+	const [payTarget, setPayTarget] = useState<{
 		payable: PayableWithOccurrences | null;
 		occurrence: PayableOccurrence;
 	} | null>(null);
@@ -1012,6 +1249,10 @@ export function PayablesPage({ data }: { data: PayablesPageData }) {
 					setDetailOpen(false);
 					setInformTarget({ payable: selectedPayable ?? null, occurrence });
 				}}
+				onPay={(occurrence) => {
+					setDetailOpen(false);
+					setPayTarget({ payable: selectedPayable ?? null, occurrence });
+				}}
 			/>
 
 			<InformAmountDialog
@@ -1019,6 +1260,15 @@ export function PayablesPage({ data }: { data: PayablesPageData }) {
 				occurrence={informTarget?.occurrence ?? null}
 				payable={informTarget?.payable ?? null}
 				onOpenChange={(open) => !open && setInformTarget(null)}
+				onSaved={refresh}
+			/>
+
+			<PayablePaymentDialog
+				open={Boolean(payTarget)}
+				occurrence={payTarget?.occurrence ?? null}
+				payable={payTarget?.payable ?? null}
+				data={data}
+				onOpenChange={(open) => !open && setPayTarget(null)}
 				onSaved={refresh}
 			/>
 

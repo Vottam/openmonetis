@@ -16,9 +16,19 @@ export const INITIAL_BALANCE_TRANSACTION_TYPE =
 	TRANSACTION_TYPES.find((type) => type === "Receita") ?? "Receita";
 
 export const ACCOUNT_AUTO_INVOICE_NOTE_PREFIX = "AUTO_FATURA:";
+export const PAYABLE_PAYMENT_NOTE_PREFIX = "AUTO_CONTA_A_PAGAR:";
 
 export const buildInvoicePaymentNote = (cardId: string, period: string) =>
 	`${ACCOUNT_AUTO_INVOICE_NOTE_PREFIX}${cardId}:${period}`;
+
+export const buildPayablePaymentNote = (occurrenceId: string, period: string) =>
+	`${PAYABLE_PAYMENT_NOTE_PREFIX}${occurrenceId}:${period}`;
+
+export const isProtectedGeneratedTransactionNote = (
+	note: string | null | undefined,
+) =>
+	Boolean(note?.startsWith(ACCOUNT_AUTO_INVOICE_NOTE_PREFIX)) ||
+	Boolean(note?.startsWith(PAYABLE_PAYMENT_NOTE_PREFIX));
 
 export const INVOICE_ADJUSTMENT_NAME = "Ajuste de fatura";
 

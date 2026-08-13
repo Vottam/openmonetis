@@ -7,7 +7,10 @@ import {
 	TRANSACTION_CONDITIONS,
 	TRANSACTION_TYPES,
 } from "@/features/transactions/lib/constants";
-import { ACCOUNT_AUTO_INVOICE_NOTE_PREFIX } from "@/shared/lib/accounts/constants";
+import {
+	ACCOUNT_AUTO_INVOICE_NOTE_PREFIX,
+	isProtectedGeneratedTransactionNote,
+} from "@/shared/lib/accounts/constants";
 import { handleActionError } from "@/shared/lib/actions/helpers";
 import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
@@ -59,7 +62,7 @@ type ProtectedTransactionCandidate = {
 const isProtectedTransaction = (
 	record: ProtectedTransactionCandidate,
 ): boolean =>
-	Boolean(record.note?.startsWith(ACCOUNT_AUTO_INVOICE_NOTE_PREFIX)) ||
+	isProtectedGeneratedTransactionNote(record.note) ||
 	isInitialBalanceTransaction(record);
 
 export async function deleteTransactionBulkAction(

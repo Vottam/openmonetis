@@ -1,12 +1,18 @@
 "use server";
 
+import { createHash, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
 	accountsPayable,
 	accountsPayableOccurrences,
+	accountsPayablePayments,
 	categories,
+	transactions,
 } from "@/db/schema";
+import { validateAllOwnership } from "@/features/transactions/actions/core";
+import { PAYMENT_METHODS } from "@/features/transactions/lib/constants";
+import { buildPayablePaymentNote } from "@/shared/lib/accounts/constants";
 import {
 	type ActionResult,
 	handleActionError,
@@ -15,7 +21,7 @@ import {
 import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
-import { toDateOnlyString } from "@/shared/utils/date";
+import { getBusinessDateString, toDateOnlyString } from "@/shared/utils/date";
 import { PAYABLE_RECURRENCE_TYPES } from "./lib/types";
 import { ensurePayableOccurrenceHorizon } from "./queries";
 
@@ -96,6 +102,22 @@ const cancelPayableSchema = z.object({
 	id: z.string().uuid("Informe a conta a pagar."),
 });
 
+const createPayablePaymentSchema = z.object({
+	occurrenceId: z.string().uuid("Informe a ocorrência."),
+	amount: z.number().finite().positive("Informe um valor válido."),
+	paymentMethod: z.enum(PAYMENT_METHODS, {
+		message: "Selecione uma forma de pagamento válida.",
+	}),
+	accountId: z.union([z.string().uuid(), z.null()]).optional(),
+	cardId: z.union([z.string().uuid(), z.null()]).optional(),
+	paidAt: z
+		.string()
+		.trim()
+		.regex(/^\d{4}-\d{2}-\d{2}$/u, "Informe uma data válida.")
+		.optional(),
+	idempotencyKey: z.string().uuid("Informe uma chave de idempotência válida."),
+});
+
 const informOccurrenceAmountSchema = z.object({
 	occurrenceId: z.string().uuid("Informe a ocorrência."),
 	amount: z.number().finite().positive("Informe um valor válido."),
@@ -103,6 +125,16 @@ const informOccurrenceAmountSchema = z.object({
 
 function getDueDay(value: string): number {
 	return Number.parseInt(value.slice(8, 10), 10);
+}
+
+function stableUuidFromString(value: string): string {
+	const hex = createHash("sha256").update(value).digest("hex");
+	const timeLow = hex.slice(0, 8);
+	const timeMid = hex.slice(8, 12);
+	const timeHi = (Number.parseInt(hex.slice(12, 16), 16) & 0x0fff) | 0x4000;
+	const clockSeq = (Number.parseInt(hex.slice(16, 20), 16) & 0x3fff) | 0x8000;
+	const node = hex.slice(20, 32);
+	return `${timeLow}-${timeMid}-${timeHi.toString(16).padStart(4, "0")}-${clockSeq.toString(16).padStart(4, "0")}-${node}`;
 }
 
 async function ensureCategoryOwnership(
@@ -346,5 +378,231 @@ export async function informOccurrenceAmountAction(
 		return { success: true, message: "Valor informado com sucesso." };
 	} catch (error) {
 		return handleActionError(error);
+	}
+}
+
+export async function createPayablePaymentAction(
+	input: unknown,
+): Promise<ActionResult<{ paymentId: string; transactionId: string }>> {
+	try {
+		const user = await getUser();
+		const data = createPayablePaymentSchema.parse(input);
+
+		const occurrence = await db.query.accountsPayableOccurrences.findFirst({
+			columns: {
+				id: true,
+				payableId: true,
+				period: true,
+				dueDate: true,
+				expectedAmount: true,
+				actualAmount: true,
+				status: true,
+			},
+			where: eq(accountsPayableOccurrences.id, data.occurrenceId),
+			with: {
+				payable: {
+					columns: {
+						userId: true,
+						description: true,
+						supplierName: true,
+						categoryId: true,
+					},
+				},
+				payments: { columns: { id: true, amount: true } },
+			},
+		});
+
+		if (!occurrence || occurrence.payable.userId !== user.id) {
+			return { success: false, error: "Ocorrência não encontrada." };
+		}
+
+		if (occurrence.status === "cancelled") {
+			return { success: false, error: "Esta ocorrência foi cancelada." };
+		}
+
+		const paidAmountSoFar = occurrence.payments.reduce((sum, payment) => {
+			const amount = Number(payment.amount ?? 0);
+			return Number.isFinite(amount) ? sum + amount : sum;
+		}, 0);
+		const expectedAmount =
+			occurrence.expectedAmount === null
+				? null
+				: Number(occurrence.expectedAmount);
+		const paymentAmount = Number(data.amount);
+		const remainingAmount =
+			expectedAmount === null
+				? null
+				: Math.max(expectedAmount - paidAmountSoFar, 0);
+
+		if (data.paymentMethod === "Cartão de crédito") {
+			if (!data.cardId) {
+				return { success: false, error: "Selecione o cartão." };
+			}
+		} else if (!data.accountId) {
+			return { success: false, error: "Selecione a conta." };
+		}
+
+		const ownershipError = await validateAllOwnership(user.id, {
+			accountId:
+				data.paymentMethod === "Cartão de crédito" ? null : data.accountId,
+			cardId: data.paymentMethod === "Cartão de crédito" ? data.cardId : null,
+		});
+		if (ownershipError) {
+			return { success: false, error: ownershipError };
+		}
+
+		const paidAt = data.paidAt ?? getBusinessDateString();
+		const note = buildPayablePaymentNote(occurrence.id, occurrence.period);
+		const isCardPayment = data.paymentMethod === "Cartão de crédito";
+		const transactionPeriod = paidAt.slice(0, 7);
+		const paymentDate = new Date(`${paidAt}T00:00:00.000Z`);
+		const amountDb = formatDecimalForDbRequired(paymentAmount);
+		const accountId = isCardPayment ? null : (data.accountId ?? null);
+		const cardId = isCardPayment ? (data.cardId ?? null) : null;
+		const idempotencyKey = data.idempotencyKey;
+		const transactionId = stableUuidFromString(`transaction:${idempotencyKey}`);
+		const paymentId = stableUuidFromString(`payment:${idempotencyKey}`);
+
+		const existingPayment = await db.query.accountsPayablePayments.findFirst({
+			columns: { id: true, transactionId: true },
+			where: eq(accountsPayablePayments.idempotencyKey, idempotencyKey),
+		});
+		if (existingPayment) {
+			return {
+				success: true,
+				message: "Pagamento registrado com sucesso.",
+				data: {
+					paymentId: existingPayment.id,
+					transactionId: existingPayment.transactionId,
+				},
+			};
+		}
+
+		if (
+			occurrence.status === "awaiting_amount" ||
+			expectedAmount === null ||
+			!Number.isFinite(expectedAmount)
+		) {
+			return {
+				success: false,
+				error: "Informe o valor da ocorrência antes de pagar.",
+			};
+		}
+
+		if (remainingAmount !== null && paymentAmount > remainingAmount + 0.005) {
+			return { success: false, error: "Valor maior que o saldo restante." };
+		}
+
+		const paymentResult = await db.transaction(async (tx) => {
+			const [transactionRow] = await tx
+				.insert(transactions)
+				.values({
+					id: transactionId,
+					condition: "À vista",
+					name: `Pagamento ${occurrence.payable.description}`,
+					paymentMethod: data.paymentMethod,
+					note,
+					amount: amountDb,
+					purchaseDate: paymentDate,
+					transactionType: "Despesa",
+					period: transactionPeriod,
+					isSettled: isCardPayment ? null : true,
+					userId: user.id,
+					cardId,
+					accountId,
+					categoryId: isCardPayment
+						? (occurrence.payable.categoryId ?? null)
+						: null,
+				})
+				.onConflictDoNothing()
+				.returning({ id: transactions.id });
+
+			if (!transactionRow) {
+				const [conflictPayment] = await tx
+					.select({
+						id: accountsPayablePayments.id,
+						transactionId: accountsPayablePayments.transactionId,
+					})
+					.from(accountsPayablePayments)
+					.where(eq(accountsPayablePayments.idempotencyKey, idempotencyKey))
+					.limit(1);
+				if (!conflictPayment) {
+					throw new Error("Falha ao resolver retry de pagamento.");
+				}
+				return {
+					paymentId: conflictPayment.id,
+					transactionId: conflictPayment.transactionId,
+				};
+			}
+
+			const [paymentRow] = await tx
+				.insert(accountsPayablePayments)
+				.values({
+					id: paymentId,
+					occurrenceId: occurrence.id,
+					transactionId: transactionRow.id,
+					idempotencyKey,
+					amount: amountDb,
+					paidAt: paymentDate,
+					paymentMethod: data.paymentMethod,
+					accountId,
+					cardId,
+					categoryId: isCardPayment
+						? (occurrence.payable.categoryId ?? null)
+						: null,
+				})
+				.onConflictDoNothing()
+				.returning({
+					id: accountsPayablePayments.id,
+					transactionId: accountsPayablePayments.transactionId,
+				});
+
+			if (!paymentRow) {
+				const [conflictPayment] = await tx
+					.select({
+						id: accountsPayablePayments.id,
+						transactionId: accountsPayablePayments.transactionId,
+					})
+					.from(accountsPayablePayments)
+					.where(eq(accountsPayablePayments.idempotencyKey, idempotencyKey))
+					.limit(1);
+				if (!conflictPayment) {
+					throw new Error("Falha ao resolver retry de pagamento.");
+				}
+				return {
+					paymentId: conflictPayment.id,
+					transactionId: conflictPayment.transactionId,
+				};
+			}
+
+			const nextPaidAmount = paidAmountSoFar + paymentAmount;
+			await tx
+				.update(accountsPayableOccurrences)
+				.set({
+					actualAmount: formatDecimalForDbRequired(nextPaidAmount),
+					status: nextPaidAmount + 0.005 >= expectedAmount ? "paid" : "partial",
+					updatedAt: new Date(),
+				})
+				.where(eq(accountsPayableOccurrences.id, occurrence.id));
+
+			return {
+				paymentId: paymentRow.id,
+				transactionId: paymentRow.transactionId,
+			};
+		});
+
+		revalidateForEntity("payables", user.id);
+		revalidateForEntity("transactions", user.id);
+
+		return {
+			success: true,
+			message: "Pagamento registrado com sucesso.",
+			data: paymentResult,
+		};
+	} catch (error) {
+		return handleActionError(error) as ActionResult<{
+			paymentId: string;
+			transactionId: string;
+		}>;
 	}
 }

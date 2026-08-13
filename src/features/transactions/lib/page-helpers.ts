@@ -36,6 +36,7 @@ import {
 	INITIAL_BALANCE_NOTE,
 	INITIAL_BALANCE_PAYMENT_METHOD,
 	INITIAL_BALANCE_TRANSACTION_TYPE,
+	isProtectedGeneratedTransactionNote,
 } from "@/shared/lib/accounts/constants";
 import {
 	PAYER_ROLE_ADMIN,

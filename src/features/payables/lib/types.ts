@@ -27,6 +27,25 @@ export type PayableCategory = {
 	name: string;
 };
 
+export type PayablePayment = {
+	id: string;
+	occurrenceId: string;
+	transactionId: string;
+	amount: number;
+	paidAt: string;
+	paymentMethod: string;
+	accountId: string | null;
+	accountName: string | null;
+	cardId: string | null;
+	cardName: string | null;
+	categoryId: string | null;
+	categoryName: string | null;
+	transactionName: string | null;
+	transactionPeriod: string | null;
+	createdAt: string;
+	updatedAt: string;
+};
+
 export type PayableOccurrence = {
 	id: string;
 	payableId: string;
@@ -34,10 +53,22 @@ export type PayableOccurrence = {
 	dueDate: string;
 	expectedAmount: number | null;
 	actualAmount: number | null;
+	paidAmount: number;
+	remainingAmount: number | null;
 	status: PayableOccurrenceStatus;
 	isOverdue: boolean;
+	payments: PayablePayment[];
 	createdAt: string;
 	updatedAt: string;
+};
+
+export type PayablePaymentFormState = {
+	amount: string;
+	paymentMethod: string;
+	accountId: string;
+	cardId: string;
+	paidAt: string;
+	idempotencyKey: string;
 };
 
 export type Payable = {
@@ -76,5 +107,7 @@ export type PayablesPageData = {
 	payables: PayableWithOccurrences[];
 	summary: PayablesSummary;
 	categories: SelectOption[];
+	accountOptions: SelectOption[];
+	cardOptions: SelectOption[];
 	today: string;
 };

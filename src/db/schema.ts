@@ -1057,6 +1057,10 @@ export type SavedInsight = typeof savedInsights.$inferSelect;
 export type Transaction = typeof transactions.$inferSelect;
 export type InstallmentAnticipation =
 	typeof installmentAnticipations.$inferSelect;
+export type AccountsPayablePayment =
+	typeof accountsPayablePayments.$inferSelect;
+export type NewAccountsPayablePayment =
+	typeof accountsPayablePayments.$inferInsert;
 export type ApiToken = typeof apiTokens.$inferSelect;
 export type NewApiToken = typeof apiTokens.$inferInsert;
 export type InboxItem = typeof inboxItems.$inferSelect;
@@ -1353,6 +1357,64 @@ export const accountsPayableOccurrences = pgTable(
 	},
 );
 
+export const accountsPayablePayments = pgTable(
+	"accounts_payable_payments",
+	{
+		id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+		occurrenceId: uuid("occurrence_id")
+			.notNull()
+			.references(() => accountsPayableOccurrences.id, {
+				onDelete: "cascade",
+			}),
+		transactionId: uuid("transaction_id")
+			.notNull()
+			.references(() => transactions.id, { onDelete: "cascade" }),
+		idempotencyKey: text("idempotency_key").notNull(),
+		amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+		paidAt: timestamp("paid_at", {
+			mode: "date",
+			withTimezone: true,
+		}).notNull(),
+		paymentMethod: text("payment_method").notNull(),
+		accountId: uuid("account_id").references(() => financialAccounts.id, {
+			onDelete: "set null",
+			onUpdate: "cascade",
+		}),
+		cardId: uuid("card_id").references(() => cards.id, {
+			onDelete: "set null",
+			onUpdate: "cascade",
+		}),
+		categoryId: uuid("category_id").references(() => categories.id, {
+			onDelete: "set null",
+			onUpdate: "cascade",
+		}),
+		createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+			.defaultNow()
+			.notNull(),
+		updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+			.defaultNow()
+			.notNull(),
+	},
+	(table) => ({
+		occurrenceIdIdx: index("accounts_payable_payments_occurrence_id_idx").on(
+			table.occurrenceId,
+		),
+		transactionIdUnique: uniqueIndex(
+			"accounts_payable_payments_transaction_id_key",
+		).on(table.transactionId),
+		idempotencyKeyUnique: uniqueIndex(
+			"accounts_payable_payments_idempotency_key_key",
+		).on(table.idempotencyKey),
+		accountIdIdx: index("accounts_payable_payments_account_id_idx").on(
+			table.accountId,
+		),
+		cardIdIdx: index("accounts_payable_payments_card_id_idx").on(table.cardId),
+		categoryIdIdx: index("accounts_payable_payments_category_id_idx").on(
+			table.categoryId,
+		),
+	}),
+);
+
 export const accountsPayableRelations = relations(
 	accountsPayable,
 	({ one, many }) => ({
@@ -1370,10 +1432,37 @@ export const accountsPayableRelations = relations(
 
 export const accountsPayableOccurrencesRelations = relations(
 	accountsPayableOccurrences,
-	({ one }) => ({
+	({ one, many }) => ({
 		payable: one(accountsPayable, {
 			fields: [accountsPayableOccurrences.payableId],
 			references: [accountsPayable.id],
+		}),
+		payments: many(accountsPayablePayments),
+	}),
+);
+
+export const accountsPayablePaymentsRelations = relations(
+	accountsPayablePayments,
+	({ one }) => ({
+		occurrence: one(accountsPayableOccurrences, {
+			fields: [accountsPayablePayments.occurrenceId],
+			references: [accountsPayableOccurrences.id],
+		}),
+		transaction: one(transactions, {
+			fields: [accountsPayablePayments.transactionId],
+			references: [transactions.id],
+		}),
+		account: one(financialAccounts, {
+			fields: [accountsPayablePayments.accountId],
+			references: [financialAccounts.id],
+		}),
+		card: one(cards, {
+			fields: [accountsPayablePayments.cardId],
+			references: [cards.id],
+		}),
+		category: one(categories, {
+			fields: [accountsPayablePayments.categoryId],
+			references: [categories.id],
 		}),
 	}),
 );
