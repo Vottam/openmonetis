@@ -57,11 +57,11 @@ type OccurrenceLike = {
 	payments?: PayablePayment[];
 };
 
-function toCents(value: number): number {
+function toMinorUnits(value: number): number {
 	return Math.round(value * 100);
 }
 
-function fromCents(value: number): number {
+function fromMinorUnits(value: number): number {
 	return value / 100;
 }
 
@@ -341,9 +341,9 @@ export function buildUpcomingMonthlyPayableOccurrences(
 }
 
 export function toCurrencyCents(value: number): number {
-	return toCents(value);
+	return toMinorUnits(value);
 }
 
 export function fromCurrencyCents(value: number): number {
-	return fromCents(value);
+	return fromMinorUnits(value);
 }

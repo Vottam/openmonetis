@@ -25,10 +25,10 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 		dueDate: "2026-08-05",
 		isOverdue: false,
 		status: "pending" as const,
-		expectedAmount: 100000,
+		expectedAmount: 100,
 		actualAmount: null,
 		paidAmount: 0,
-		remainingAmount: 100000,
+		remainingAmount: 100,
 		...overrides,
 	});
 
@@ -37,9 +37,9 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 		dueDate: "2026-08-05",
 		isOverdue: false,
 		status: "paid" as const,
-		expectedAmount: 100000,
+		expectedAmount: 100,
 		actualAmount: null,
-		paidAmount: 100000,
+		paidAmount: 100,
 		remainingAmount: 0,
 		...overrides,
 	});
@@ -49,10 +49,10 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 		dueDate: "2026-08-05",
 		isOverdue: false,
 		status: "partial" as const,
-		expectedAmount: 100000,
+		expectedAmount: 100,
 		actualAmount: null,
-		paidAmount: 40000,
-		remainingAmount: 60000,
+		paidAmount: 40,
+		remainingAmount: 60,
 		...overrides,
 	});
 
@@ -96,20 +96,20 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 	});
 
 	describe("computeMonthlySummary", () => {
-		it("paid occurrence: paid=100000, remaining=0, totalKnown=100000", () => {
+		it("paid occurrence: paid=100, remaining=0, totalKnown=100", () => {
 			const summary = computeMonthlySummary([paidOcc()]);
-			expect(summary.paid).toBe(100000);
+			expect(summary.paid).toBe(100);
 			expect(summary.remaining).toBe(0);
-			expect(summary.totalKnown).toBe(100000);
+			expect(summary.totalKnown).toBe(100);
 			expect(summary.overdue).toBe(0);
 			expect(summary.awaitingAmountCount).toBe(0);
 		});
 
-		it("partial occurrence: paid=40000, remaining=60000, totalKnown=100000", () => {
+		it("partial occurrence: paid=40, remaining=60, totalKnown=100", () => {
 			const summary = computeMonthlySummary([partialOcc()]);
-			expect(summary.paid).toBe(40000);
-			expect(summary.remaining).toBe(60000);
-			expect(summary.totalKnown).toBe(100000);
+			expect(summary.paid).toBe(40);
+			expect(summary.remaining).toBe(60);
+			expect(summary.totalKnown).toBe(100);
 			expect(summary.overdue).toBe(0);
 			expect(summary.awaitingAmountCount).toBe(0);
 		});
@@ -123,16 +123,27 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 			expect(summary.overdue).toBe(0);
 		});
 
-		it("mixed: paid + partial + awaiting", () => {
+		it("mixed reais example: totalKnown=2750, paid=2500, remaining=250, overdue=100", () => {
 			const summary = computeMonthlySummary([
-				paidOcc(),
-				partialOcc(),
+				paidOcc({ expectedAmount: 2500, paidAmount: 2500, remainingAmount: 0 }),
+				partialOcc({
+					expectedAmount: 100,
+					paidAmount: 0,
+					remainingAmount: 100,
+					isOverdue: true,
+				}),
+				partialOcc({
+					expectedAmount: 150,
+					paidAmount: 0,
+					remainingAmount: 150,
+					isOverdue: false,
+				}),
 				awaitingOcc(),
 			]);
-			expect(summary.paid).toBe(140000); // 100000 + 40000
-			expect(summary.remaining).toBe(60000);
-			expect(summary.totalKnown).toBe(200000); // 100000 + 100000
-			expect(summary.overdue).toBe(0);
+			expect(summary.paid).toBe(2500);
+			expect(summary.remaining).toBe(250);
+			expect(summary.totalKnown).toBe(2750);
+			expect(summary.overdue).toBe(100);
 			expect(summary.awaitingAmountCount).toBe(1);
 		});
 

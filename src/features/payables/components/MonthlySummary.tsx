@@ -15,10 +15,10 @@ export function MonthlySummary({ period, summary }: MonthlySummaryProps) {
 	const safeProgress = Number.isFinite(progress)
 		? Math.max(0, Math.min(progress, 100))
 		: 0;
-	const remainingLabel = formatCurrency(summary.remaining / 100);
-	const overdueLabel = formatCurrency(summary.overdue / 100);
-	const paidLabel = formatCurrency(summary.paid / 100);
-	const knownLabel = formatCurrency(summary.totalKnown / 100);
+	const remainingLabel = formatCurrency(summary.remaining);
+	const overdueLabel = formatCurrency(summary.overdue);
+	const paidLabel = formatCurrency(summary.paid);
+	const knownLabel = formatCurrency(summary.totalKnown);
 	const awaitingLabel =
 		summary.awaitingAmountCount === 0
 			? "Nenhuma conta aguardando valor"
