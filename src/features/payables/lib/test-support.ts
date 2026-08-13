@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { cards, categories, financialAccounts, user } from "@/db/schema";
+import {
+	cards,
+	categories,
+	financialAccounts,
+	payers,
+	user,
+} from "@/db/schema";
 import { db } from "@/shared/lib/db";
 
 export function createPayablesTestSeed() {
@@ -10,6 +16,7 @@ export function createPayablesTestSeed() {
 	const otherUserId = randomUUID();
 	const accountId = randomUUID();
 	const cardId = randomUUID();
+	const adminPayerId = randomUUID();
 
 	return {
 		user: {
@@ -29,6 +36,20 @@ export function createPayablesTestSeed() {
 			image: null,
 			createdAt: new Date("2025-01-01T00:00:00.000Z"),
 			updatedAt: new Date("2025-01-01T00:00:00.000Z"),
+		},
+		adminPayer: {
+			id: adminPayerId,
+			name: "Pagador Admin Teste",
+			email: null,
+			avatarUrl: null,
+			status: "active",
+			note: null,
+			role: "admin",
+			isAutoSend: false,
+			shareCode: `payables-admin-${adminPayerId}`,
+			lastMailAt: null,
+			createdAt: new Date("2025-01-01T00:00:00.000Z"),
+			userId: `payables-test-user-${userId}`,
 		},
 		account: {
 			id: accountId,
@@ -82,6 +103,7 @@ export async function seedPayablesTestData() {
 	payablesTestContext.__payablesTestUser = seed.user;
 
 	await db.insert(user).values([seed.user, seed.otherUser]);
+	await db.insert(payers).values(seed.adminPayer);
 	await db.insert(financialAccounts).values(seed.account);
 	await db.insert(cards).values(seed.card);
 	await db.insert(categories).values([seed.category, seed.otherCategory]);
@@ -89,6 +111,7 @@ export async function seedPayablesTestData() {
 	return {
 		userId: seed.user.id,
 		otherUserId: seed.otherUser.id,
+		adminPayerId: seed.adminPayer.id,
 		categoryId: seed.category.id,
 		categoryName: seed.category.name,
 		otherCategoryId: seed.otherCategory.id,

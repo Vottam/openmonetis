@@ -20,6 +20,7 @@ import {
 } from "@/shared/lib/actions/helpers";
 import { getUser } from "@/shared/lib/auth/server";
 import { db } from "@/shared/lib/db";
+import { getAdminPayerId } from "@/shared/lib/payers/get-admin-id";
 import { formatDecimalForDbRequired } from "@/shared/utils/currency";
 import { getBusinessDateString, toDateOnlyString } from "@/shared/utils/date";
 import { PAYABLE_RECURRENCE_TYPES } from "./lib/types";
@@ -457,8 +458,13 @@ export async function createPayablePaymentAction(
 		const transactionPeriod = paidAt.slice(0, 7);
 		const paymentDate = new Date(`${paidAt}T00:00:00.000Z`);
 		const amountDb = formatDecimalForDbRequired(paymentAmount);
+		const transactionAmountDb = `-${amountDb}`;
 		const accountId = isCardPayment ? null : (data.accountId ?? null);
 		const cardId = isCardPayment ? (data.cardId ?? null) : null;
+		const adminPayerId = await getAdminPayerId(user.id);
+		if (!adminPayerId) {
+			return { success: false, error: "Pagador admin não encontrado." };
+		}
 		const idempotencyKey = data.idempotencyKey;
 		const transactionId = stableUuidFromString(`transaction:${idempotencyKey}`);
 		const paymentId = stableUuidFromString(`payment:${idempotencyKey}`);
@@ -502,12 +508,13 @@ export async function createPayablePaymentAction(
 					name: `Pagamento ${occurrence.payable.description}`,
 					paymentMethod: data.paymentMethod,
 					note,
-					amount: amountDb,
+					amount: transactionAmountDb,
 					purchaseDate: paymentDate,
 					transactionType: "Despesa",
 					period: transactionPeriod,
 					isSettled: isCardPayment ? null : true,
 					userId: user.id,
+					payerId: adminPayerId,
 					cardId,
 					accountId,
 					categoryId: isCardPayment
