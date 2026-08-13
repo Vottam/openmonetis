@@ -81,10 +81,7 @@ export async function seedPayablesTestData() {
 	payablesTestContext.__loanTestUser = seed.user;
 	payablesTestContext.__payablesTestUser = seed.user;
 
-	await db
-		.insert(user)
-		.values([seed.user, seed.otherUser])
-		.onConflictDoNothing();
+	await db.insert(user).values([seed.user, seed.otherUser]);
 	await db.insert(financialAccounts).values(seed.account);
 	await db.insert(cards).values(seed.card);
 	await db.insert(categories).values([seed.category, seed.otherCategory]);

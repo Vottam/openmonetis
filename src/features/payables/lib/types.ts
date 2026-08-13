@@ -25,6 +25,7 @@ export type PayableOccurrenceStatus =
 export type PayableCategory = {
 	id: string;
 	name: string;
+	icon: string | null;
 };
 
 export type PayablePayment = {
@@ -77,6 +78,7 @@ export type Payable = {
 	supplierName: string;
 	categoryId: string | null;
 	categoryName: string | null;
+	categoryIcon: string | null;
 	recurrenceType: PayableRecurrenceType;
 	defaultAmount: number | null;
 	dueDay: number | null;

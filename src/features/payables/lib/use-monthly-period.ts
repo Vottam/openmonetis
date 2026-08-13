@@ -1,44 +1,59 @@
-import { useEffect, useState } from "react";
+"use client";
 
-export type MonthlyPeriod = "2026-07" | "2026-08" | "2026-09";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect } from "react";
+import { getCurrentPeriod, parsePeriod } from "@/shared/utils/period";
 
-/**
- * Hook para persistir a competência mensal na URL search params.
- *
- * Source of truth: URL search params (/payables?period=YYYY-MM)
- * NO localStorage, NO window.location.search no initializer.
- * Usa APIs canônicas do Next.js.
- *
- * @returns [currentPeriod, navigateToPeriod]
- */
+function isValidPeriod(value: string | null | undefined): value is string {
+	if (!value) {
+		return false;
+	}
+
+	try {
+		parsePeriod(value);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export function useMonthlyPeriod(
-	initial: MonthlyPeriod = "2026-08",
-): [MonthlyPeriod, (period: MonthlyPeriod) => void] {
-	// Extrai period da URL via URLSearchParams (API nativa, segura)
-	const urlParams =
-		typeof window !== "undefined"
-			? new URLSearchParams(window.location.search)
-			: new URLSearchParams();
-	const savedPeriod = urlParams.get("period") as MonthlyPeriod | null;
+	initialPeriod: string,
+): [string, (period: string) => void] {
+	const searchParams = useSearchParams();
+	const router = useRouter();
+	const pathname = usePathname();
 
-	// Inicializa da URL, fallback para initial (mês atual)
-	const [period, setPeriodState] = useState<MonthlyPeriod>(() => {
-		if (savedPeriod) return savedPeriod;
-		return initial;
-	});
+	const normalizedInitial = isValidPeriod(initialPeriod)
+		? initialPeriod
+		: getCurrentPeriod();
+	const urlPeriod = searchParams.get("period");
+	const selectedPeriod = isValidPeriod(urlPeriod)
+		? urlPeriod
+		: normalizedInitial;
 
-	// Atualiza URL quando period muda
-	// pushState preservar back/forward e links diretos
-	const updatePeriod = (newPeriod: MonthlyPeriod) => {
-		setPeriodState(newPeriod);
-		if (typeof window !== "undefined") {
-			const params = new URLSearchParams(window.location.search);
-			params.set("period", newPeriod);
-			const newUrl = `${window.location.pathname}?${params.toString()}`;
-			// Usa o histórico nativo de forma canônica
-			window.history.pushState({ path: newUrl }, "", newUrl);
+	useEffect(() => {
+		if (!urlPeriod || isValidPeriod(urlPeriod)) {
+			return;
 		}
-	};
 
-	return [period, updatePeriod];
+		const params = new URLSearchParams(searchParams.toString());
+		params.set("period", normalizedInitial);
+		router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+	}, [normalizedInitial, pathname, router, searchParams, urlPeriod]);
+
+	const setPeriod = useCallback(
+		(period: string) => {
+			if (!isValidPeriod(period)) {
+				return;
+			}
+
+			const params = new URLSearchParams(searchParams.toString());
+			params.set("period", period);
+			router.push(`${pathname}?${params.toString()}`, { scroll: false });
+		},
+		[pathname, router, searchParams],
+	);
+
+	return [selectedPeriod, setPeriod];
 }

@@ -8,9 +8,19 @@ import {
 	validateInvariance,
 } from "./monthly-read-model";
 
+type TestOccurrence = {
+	period: string;
+	dueDate: string;
+	isOverdue: boolean;
+	status: "pending" | "paid" | "partial" | "awaiting_amount" | "cancelled";
+	expectedAmount: number | null;
+	actualAmount: number | null;
+	paidAmount: number;
+	remainingAmount: number | null;
+};
+
 describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
-	// Helper: occurrence with all standard fields
-	const createOccurrence = (overrides: Partial<any> = {}) => ({
+	const createOccurrence = (overrides: Partial<TestOccurrence> = {}) => ({
 		period: "2026-08",
 		dueDate: "2026-08-05",
 		isOverdue: false,
@@ -22,8 +32,7 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 		...overrides,
 	});
 
-	// Helper: fully paid occurrence
-	const paidOcc = (overrides: Partial<any> = {}) => ({
+	const paidOcc = (overrides: Partial<TestOccurrence> = {}) => ({
 		period: "2026-08",
 		dueDate: "2026-08-05",
 		isOverdue: false,
@@ -35,8 +44,7 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 		...overrides,
 	});
 
-	// Helper: partial occurrence
-	const partialOcc = (overrides: Partial<any> = {}) => ({
+	const partialOcc = (overrides: Partial<TestOccurrence> = {}) => ({
 		period: "2026-08",
 		dueDate: "2026-08-05",
 		isOverdue: false,
@@ -45,12 +53,10 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 		actualAmount: null,
 		paidAmount: 40000,
 		remainingAmount: 60000,
-		partialPayments: 1,
 		...overrides,
 	});
 
-	// Helper: awaiting_amount occurrence
-	const awaitingOcc = (overrides: Partial<any> = {}) => ({
+	const awaitingOcc = (overrides: Partial<TestOccurrence> = {}) => ({
 		period: "2026-08",
 		dueDate: "2026-08-05",
 		isOverdue: false,
@@ -176,14 +182,13 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 			expect(getCompetenceMonthString(createOccurrence())).toBe("2026-08");
 		});
 
-		it("extracts from dueDate", () => {
+		it("returns null when period is invalid", () => {
 			expect(
 				getCompetenceMonthString({
 					...createOccurrence(),
 					period: null,
-					dueDate: "2026-08-20",
 				}),
-			).toBe("2026-08");
+			).toBeNull();
 		});
 	});
 
@@ -201,14 +206,15 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 					dueDate: "2026-08-10",
 				}),
 				createOccurrence({
-					status: "overdue",
+					status: "pending",
 					isOverdue: true,
 					dueDate: "2026-07-01",
 				}),
 			];
 			const sorted = sortOccurrencesForDisplay(occs);
 			// overdue (priority 0) should come first
-			expect(sorted[0].status).toBe("overdue");
+			expect(sorted[0].status).toBe("pending");
+			expect(sorted[0].isOverdue).toBe(true);
 			// partial (priority 1) should come second
 			expect(sorted[1].status).toBe("partial");
 			// pending (priority 2) should come third

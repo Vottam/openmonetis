@@ -47,7 +47,7 @@ function mapPayable(row: {
 	description: string;
 	supplierName: string;
 	categoryId: string | null;
-	category: { id: string; name: string } | null;
+	category: { id: string; name: string; icon: string | null } | null;
 	recurrenceType: string;
 	defaultAmount: unknown;
 	dueDay: number | null;
@@ -63,6 +63,7 @@ function mapPayable(row: {
 		supplierName: row.supplierName,
 		categoryId: row.categoryId,
 		categoryName: row.category?.name ?? null,
+		categoryIcon: row.category?.icon ?? null,
 		recurrenceType: recurrenceTypes.has(row.recurrenceType)
 			? (row.recurrenceType as PayableRecurrenceType)
 			: "once",
@@ -245,7 +246,7 @@ export async function fetchPayablesPageData(
 		db.query.accountsPayable.findMany({
 			where: eq(accountsPayable.userId, userId),
 			with: {
-				category: { columns: { id: true, name: true } },
+				category: { columns: { id: true, name: true, icon: true } },
 				occurrences: {
 					orderBy: (occurrence, { asc: ascOrder }) => [
 						ascOrder(occurrence.dueDate),
@@ -275,7 +276,11 @@ export async function fetchPayablesPageData(
 			],
 		}),
 		db
-			.select({ id: categories.id, name: categories.name })
+			.select({
+				id: categories.id,
+				name: categories.name,
+				icon: categories.icon,
+			})
 			.from(categories)
 			.where(eq(categories.userId, userId))
 			.orderBy(asc(categories.name)),
@@ -302,6 +307,7 @@ export async function fetchPayablesPageData(
 		categories: categoryRows.map((category) => ({
 			value: category.id,
 			label: category.name,
+			icon: category.icon,
 		})),
 		accountOptions: accountRows.map((account) => ({
 			value: account.id,

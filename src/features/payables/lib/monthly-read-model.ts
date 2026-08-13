@@ -1,116 +1,173 @@
-// Pure helpers for monthly payables read model
-// These functions receive occurrence data and compute monthly summaries
-// No side effects, no database calls, pure computations
+import { comparePeriods, parsePeriod } from "@/shared/utils/period";
+import type {
+	PayableOccurrenceStatus,
+	PayablePayment,
+	PayableRecurrenceType,
+	PayableStatus,
+	PayableWithOccurrences,
+} from "./types";
 
-export type OccurrenceStatus =
-	| "scheduled"
-	| "pending"
-	| "partial"
-	| "paid"
-	| "overdue"
-	| "awaiting_amount"
-	| "cancelled";
-
-export interface MonthlySummary {
-	totalKnown: number; // in cents, sum of known values from non-cancelled occurrences
-	paid: number; // in cents, sum of paidAmount from paid/partial occurrences
-	remaining: number; // in cents, sum of remainingAmount from non-paid occurrences
-	overdue: number; // in cents, sum of remainingAmount from overdue occurrences
-	awaitingAmountCount: number; // count of occurrences with status awaiting_amount
-}
-
-/** Month filter based on year/month competence */
 export interface MonthFilter {
 	year: number;
-	month: number; // 1-12
+	month: number;
 }
 
-/**
- * Filters occurrences by monthly competence
- * Competence is determined by occurrence.period
- * The payment date does NOT determine the competence month
- */
-export function filterOccurrencesByCompetence(
-	occurrences: any[],
+export interface MonthlySummary {
+	totalKnown: number;
+	paid: number;
+	remaining: number;
+	overdue: number;
+	awaitingAmountCount: number;
+}
+
+export type MonthlyPayableOccurrence = {
+	payable: {
+		id: string;
+		description: string;
+		supplierName: string;
+		categoryId: string | null;
+		categoryName: string | null;
+		categoryIcon: string | null;
+		recurrenceType: PayableRecurrenceType;
+		status: PayableStatus;
+	};
+	occurrence: {
+		id: string;
+		period: string;
+		dueDate: string;
+		expectedAmount: number | null;
+		actualAmount: number | null;
+		paidAmount: number;
+		remainingAmount: number | null;
+		status: PayableOccurrenceStatus;
+		isOverdue: boolean;
+		payments: PayablePayment[];
+	};
+};
+
+type OccurrenceLike = {
+	period: string | null | undefined;
+	dueDate?: string | null | undefined;
+	expectedAmount?: number | null | undefined;
+	actualAmount?: number | null | undefined;
+	paidAmount?: number | null | undefined;
+	remainingAmount?: number | null | undefined;
+	status: PayableOccurrenceStatus;
+	isOverdue: boolean;
+	payments?: PayablePayment[];
+};
+
+function toCents(value: number): number {
+	return Math.round(value * 100);
+}
+
+function fromCents(value: number): number {
+	return value / 100;
+}
+
+function hasPeriod(value: string | null | undefined): value is string {
+	if (!value) {
+		return false;
+	}
+
+	try {
+		parsePeriod(value);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function getOpenBalanceAmount(occurrence: OccurrenceLike): number {
+	if (occurrence.status === "paid" || occurrence.status === "cancelled") {
+		return 0;
+	}
+
+	if (
+		occurrence.remainingAmount !== null &&
+		occurrence.remainingAmount !== undefined
+	) {
+		return Math.max(occurrence.remainingAmount, 0);
+	}
+
+	if (
+		occurrence.expectedAmount !== null &&
+		occurrence.expectedAmount !== undefined
+	) {
+		return Math.max(occurrence.expectedAmount, 0);
+	}
+
+	return 0;
+}
+
+export function isValidPeriod(
+	value: string | null | undefined,
+): value is string {
+	return hasPeriod(value);
+}
+
+export function filterOccurrencesByCompetence<T extends OccurrenceLike>(
+	occurrences: readonly T[],
 	filter: MonthFilter,
-): any[] {
-	return occurrences.filter((occ) => {
-		const occPeriod = occ.period;
-		if (!occPeriod) return false;
-		const [periodYear, periodMonth] = occPeriod.split("-").map(Number);
-		return periodYear === filter.year && periodMonth === filter.month;
+): T[] {
+	return occurrences.filter((occurrence) => {
+		if (!hasPeriod(occurrence.period)) {
+			return false;
+		}
+
+		try {
+			const { year, month } = parsePeriod(occurrence.period);
+			return year === filter.year && month === filter.month;
+		} catch {
+			return false;
+		}
 	});
 }
 
-/**
- * Computes the monthly summary from a list of occurrences
- * Key rules per Phase B2:
- * - Cancelled occurrences are excluded
- * - 'paid' status: paidAmount contributes to 'paid'
- * - 'partial' status: both paidAmount AND remainingAmount contribute (this is the key B2 rule)
- * - 'pending' status with isOverdue=true: remainingAmount contributes to overdue
- * - 'overdue' status: remainingAmount contributes to overdue
- * - 'awaiting_amount' status: no monetary value, counted separately
- * - totalKnown = sum of known values (expectedAmount or actualAmount) from active occurrences
- */
-export function computeMonthlySummary(occurrences: any[]): MonthlySummary {
+export function getCompetenceMonthString(
+	occurrence: Pick<OccurrenceLike, "period">,
+): string | null {
+	return hasPeriod(occurrence.period) ? occurrence.period : null;
+}
+
+export function computeMonthlySummary(
+	occurrences: readonly OccurrenceLike[],
+): MonthlySummary {
 	let totalKnown = 0;
 	let paid = 0;
 	let remaining = 0;
 	let overdue = 0;
 	let awaitingAmountCount = 0;
 
-	occurrences.forEach((occ) => {
-		// Skip cancelled occurrences
-		if (occ.status === "cancelled") return;
-
-		// Total known: sum of known values from non-cancelled occurrences
-		if (occ.expectedAmount !== null && occ.expectedAmount !== undefined) {
-			totalKnown += occ.expectedAmount;
-		}
-		if (occ.actualAmount !== null && occ.actualAmount !== undefined) {
-			totalKnown += occ.actualAmount;
+	for (const occurrence of occurrences) {
+		if (occurrence.status === "cancelled") {
+			continue;
 		}
 
-		// Status-based logic using occurrence.status field
-		const isPaid = occ.status === "paid";
-		const isPartial = occ.status === "partial";
-		const isPending = occ.status === "pending";
-		const isOverdue = occ.status === "overdue";
-		const isAwaiting = occ.status === "awaiting_amount";
-
-		// Paid amount: count paidAmount for 'paid' and 'partial' statuses
-		if (isPaid && occ.paidAmount !== null && occ.paidAmount !== undefined) {
-			paid += occ.paidAmount;
-		}
-		if (isPartial && occ.paidAmount !== null && occ.paidAmount !== undefined) {
-			paid += occ.paidAmount;
+		if (
+			occurrence.expectedAmount !== null &&
+			occurrence.expectedAmount !== undefined
+		) {
+			totalKnown += occurrence.expectedAmount;
 		}
 
-		// Remaining amount logic
-		if (occ.remainingAmount !== null && occ.remainingAmount > 0) {
-			if (isPartial) {
-				// Partial: remainingAmount is part of the outstanding balance
-				remaining += occ.remainingAmount;
-			} else if (isPaid) {
-				// Paid but still has remaining (e.g., partial payment made)
-				remaining += occ.remainingAmount;
-			} else if (isPending || isOverdue) {
-				// Pending/Overdue: remainingAmount is the outstanding value
-				remaining += occ.remainingAmount;
-				if (isOverdue) {
-					overdue += occ.remainingAmount;
-				}
-			}
-			// 'scheduled': treat like pending (amount not yet due)
-			// 'awaiting_amount': no monetary remaining yet (handled below via count)
+		if (occurrence.status === "paid" || occurrence.status === "partial") {
+			paid += occurrence.paidAmount ?? 0;
 		}
 
-		// Awaiting amount count
-		if (isAwaiting) {
+		if (occurrence.status === "awaiting_amount") {
 			awaitingAmountCount += 1;
+			continue;
 		}
-	});
+
+		const openBalance = getOpenBalanceAmount(occurrence);
+		if (openBalance > 0) {
+			remaining += openBalance;
+			if (occurrence.isOverdue) {
+				overdue += openBalance;
+			}
+		}
+	}
 
 	return {
 		totalKnown,
@@ -121,70 +178,172 @@ export function computeMonthlySummary(occurrences: any[]): MonthlySummary {
 	};
 }
 
-/**
- * Validates the invariant: Total known = Paid + Remaining
- * When all values are known and no awaiting_amount, this should hold exactly.
- */
 export function validateInvariance(summary: MonthlySummary): boolean {
 	return summary.totalKnown === summary.paid + summary.remaining;
 }
 
-/**
- * Determines the visual status of an occurrence for display purposes
- * Priority: paid > overdue > partial > pending > awaiting > cancelled
- * Uses occurrence.status as primary determinant, isOverdue as secondary.
- */
 export function getOccurrenceDisplayStatus(
-	occ: any,
-): "paid" | "overdue" | "partial" | "awaiting" | "pending" | "cancelled" {
-	if (occ.status === "cancelled") return "cancelled";
-	if (occ.status === "paid") return "paid";
-	if (occ.status === "awaiting_amount") return "awaiting";
-	if (occ.isOverdue) return "overdue";
-	if (
-		occ.status === "partial" ||
-		(occ.partialPayments && occ.partialPayments > 0)
-	)
+	occurrence: OccurrenceLike,
+):
+	| "paid"
+	| "overdue"
+	| "partial"
+	| "awaiting"
+	| "pending"
+	| "cancelled"
+	| "scheduled" {
+	if (occurrence.status === "cancelled") {
+		return "cancelled";
+	}
+
+	if (occurrence.status === "paid") {
+		return "paid";
+	}
+
+	if (occurrence.status === "awaiting_amount") {
+		return "awaiting";
+	}
+
+	if (occurrence.status === "partial") {
 		return "partial";
+	}
+
+	if (occurrence.isOverdue) {
+		return "overdue";
+	}
+
+	if (occurrence.status === "scheduled") {
+		return "scheduled";
+	}
+
 	return "pending";
 }
 
-/**
- * Gets the competence month string from an occurrence
- */
-export function getCompetenceMonthString(occ: any): string | null {
-	if (occ.period) return occ.period;
-	if (occ.dueDate) {
-		const d = new Date(occ.dueDate);
-		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-	}
-	return null;
-}
-
-/**
- * Sorts occurrences for display in the monthly panel
- * Priority: overdue > partial > pending > awaiting > paid
- * Uses occurrence.isOverdue field for the overdue determination.
- */
-export function sortOccurrencesForDisplay(occurrences: any[]): any[] {
-	const statusPriority: Record<string, number> = {
+export function sortOccurrencesForDisplay<T extends OccurrenceLike>(
+	occurrences: readonly T[],
+): T[] {
+	const priority: Record<string, number> = {
 		overdue: 0,
 		partial: 1,
 		pending: 2,
-		awaiting: 3,
-		paid: 4,
-		cancelled: 5,
+		scheduled: 3,
+		awaiting: 4,
+		paid: 5,
+		cancelled: 6,
 	};
 
-	return [...occurrences].sort((a, b) => {
-		const Sa = getOccurrenceDisplayStatus(a);
-		const Sb = getOccurrenceDisplayStatus(b);
-		const pa = statusPriority[Sa] ?? 99;
-		const pb = statusPriority[Sb] ?? 99;
-		if (pa !== pb) return pa - pb;
-		// Within same status, sort by due date ascending
-		const da = new Date(a.dueDate ?? "").getTime();
-		const db = new Date(b.dueDate ?? "").getTime();
-		return da - db;
+	return [...occurrences].sort((left, right) => {
+		const leftStatus = getOccurrenceDisplayStatus(left);
+		const rightStatus = getOccurrenceDisplayStatus(right);
+		const leftPriority = priority[leftStatus] ?? 99;
+		const rightPriority = priority[rightStatus] ?? 99;
+
+		if (leftPriority !== rightPriority) {
+			return leftPriority - rightPriority;
+		}
+
+		return (left.dueDate ?? "").localeCompare(right.dueDate ?? "");
 	});
+}
+
+export function sortMonthlyPayableOccurrences(
+	occurrences: readonly MonthlyPayableOccurrence[],
+): MonthlyPayableOccurrence[] {
+	const orderedOccurrenceIds = new Map(
+		sortOccurrencesForDisplay(occurrences.map((item) => item.occurrence)).map(
+			(occurrence, index) => [occurrence.id, index],
+		),
+	);
+
+	return [...occurrences].sort((left, right) => {
+		const leftIndex = orderedOccurrenceIds.get(left.occurrence.id) ?? 0;
+		const rightIndex = orderedOccurrenceIds.get(right.occurrence.id) ?? 0;
+		return leftIndex - rightIndex;
+	});
+}
+
+export function buildMonthlyPayableOccurrences(
+	payables: readonly PayableWithOccurrences[],
+	period: string,
+): MonthlyPayableOccurrence[] {
+	return payables.flatMap((entry) =>
+		entry.occurrences
+			.filter((occurrence) => occurrence.period === period)
+			.map((occurrence) => ({
+				payable: {
+					id: entry.payable.id,
+					description: entry.payable.description,
+					supplierName: entry.payable.supplierName,
+					categoryId: entry.payable.categoryId,
+					categoryName: entry.payable.categoryName,
+					categoryIcon: entry.payable.categoryIcon,
+					recurrenceType: entry.payable.recurrenceType,
+					status: entry.payable.status,
+				},
+				occurrence: {
+					id: occurrence.id,
+					period: occurrence.period,
+					dueDate: occurrence.dueDate,
+					expectedAmount: occurrence.expectedAmount,
+					actualAmount: occurrence.actualAmount,
+					paidAmount: occurrence.paidAmount,
+					remainingAmount: occurrence.remainingAmount,
+					status: occurrence.status,
+					isOverdue: occurrence.isOverdue,
+					payments: occurrence.payments,
+				},
+			})),
+	);
+}
+
+export function buildUpcomingMonthlyPayableOccurrences(
+	payables: readonly PayableWithOccurrences[],
+	period: string,
+): MonthlyPayableOccurrence[] {
+	return payables.flatMap((entry) =>
+		entry.occurrences
+			.filter((occurrence) => {
+				if (!hasPeriod(occurrence.period)) {
+					return false;
+				}
+
+				return comparePeriods(occurrence.period, period) > 0;
+			})
+			.filter(
+				(occurrence) =>
+					occurrence.status !== "paid" && occurrence.status !== "cancelled",
+			)
+			.map((occurrence) => ({
+				payable: {
+					id: entry.payable.id,
+					description: entry.payable.description,
+					supplierName: entry.payable.supplierName,
+					categoryId: entry.payable.categoryId,
+					categoryName: entry.payable.categoryName,
+					categoryIcon: entry.payable.categoryIcon,
+					recurrenceType: entry.payable.recurrenceType,
+					status: entry.payable.status,
+				},
+				occurrence: {
+					id: occurrence.id,
+					period: occurrence.period,
+					dueDate: occurrence.dueDate,
+					expectedAmount: occurrence.expectedAmount,
+					actualAmount: occurrence.actualAmount,
+					paidAmount: occurrence.paidAmount,
+					remainingAmount: occurrence.remainingAmount,
+					status: occurrence.status,
+					isOverdue: occurrence.isOverdue,
+					payments: occurrence.payments,
+				},
+			})),
+	);
+}
+
+export function toCurrencyCents(value: number): number {
+	return toCents(value);
+}
+
+export function fromCurrencyCents(value: number): number {
+	return fromCents(value);
 }

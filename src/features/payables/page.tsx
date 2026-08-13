@@ -10,6 +10,18 @@ import {
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { CategoryIcon } from "@/features/categories/components/category-icon";
+import { MonthlyOccurrenceCard } from "@/features/payables/components/MonthlyOccurrenceCard";
+import { MonthlyPeriodSelector } from "@/features/payables/components/MonthlyPeriodSelector";
+import { MonthlySummary } from "@/features/payables/components/MonthlySummary";
+import type { MonthlyPayableOccurrence } from "@/features/payables/lib/monthly-read-model";
+import {
+	buildMonthlyPayableOccurrences,
+	buildUpcomingMonthlyPayableOccurrences,
+	computeMonthlySummary,
+	sortMonthlyPayableOccurrences,
+} from "@/features/payables/lib/monthly-read-model";
+import { useMonthlyPeriod } from "@/features/payables/lib/use-monthly-period";
 import { PAYMENT_METHODS } from "@/features/transactions/lib/constants";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import { EmptyState } from "@/shared/components/feedback/empty-state";
@@ -972,6 +984,26 @@ export function PayablesPage({ data }: { data: PayablesPageData }) {
 	const [formMode, setFormMode] = useState<"create" | "update">("create");
 	const [selectedPayable, setSelectedPayable] =
 		useState<PayableWithOccurrences | null>(null);
+
+	const defaultPeriod = data.today.slice(0, 7);
+	const [period, setPeriod] = useMonthlyPeriod(defaultPeriod);
+	const monthlyOccurrences = useMemo(
+		() => buildMonthlyPayableOccurrences(data.payables, period),
+		[data.payables, period],
+	);
+	const monthlySummary = useMemo(
+		() =>
+			computeMonthlySummary(monthlyOccurrences.map((item) => item.occurrence)),
+		[monthlyOccurrences],
+	);
+	const sortedMonthlyOccurrences = useMemo(
+		() => sortMonthlyPayableOccurrences(monthlyOccurrences),
+		[monthlyOccurrences],
+	);
+	const upcomingOccurrences = useMemo(
+		() => buildUpcomingMonthlyPayableOccurrences(data.payables, period),
+		[data.payables, period],
+	);
 	const [detailOpen, setDetailOpen] = useState(false);
 	const [deleteTarget, setDeleteTarget] =
 		useState<PayableWithOccurrences | null>(null);
@@ -1013,9 +1045,35 @@ export function PayablesPage({ data }: { data: PayablesPageData }) {
 		setFormOpen(true);
 	};
 
+	const findPayableById = (payableId: string) =>
+		data.payables.find((item) => item.payable.id === payableId) ?? null;
+
 	const openDetail = (payable: PayableWithOccurrences) => {
 		setSelectedPayable(payable);
 		setDetailOpen(true);
+	};
+
+	const openMonthlyDetail = (item: MonthlyPayableOccurrence) => {
+		setSelectedPayable(findPayableById(item.payable.id));
+		setDetailOpen(true);
+	};
+
+	const openMonthlyInform = (item: MonthlyPayableOccurrence) => {
+		setSelectedPayable(findPayableById(item.payable.id));
+		setDetailOpen(false);
+		setInformTarget({
+			payable: findPayableById(item.payable.id),
+			occurrence: item.occurrence as PayableOccurrence,
+		});
+	};
+
+	const openMonthlyPay = (item: MonthlyPayableOccurrence) => {
+		setSelectedPayable(findPayableById(item.payable.id));
+		setDetailOpen(false);
+		setPayTarget({
+			payable: findPayableById(item.payable.id),
+			occurrence: item.occurrence as PayableOccurrence,
+		});
 	};
 
 	const refresh = () => router.refresh();
@@ -1066,7 +1124,6 @@ export function PayablesPage({ data }: { data: PayablesPageData }) {
 					Nova conta a pagar
 				</Button>
 			</div>
-
 			<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
 				{[
 					{
@@ -1106,126 +1163,212 @@ export function PayablesPage({ data }: { data: PayablesPageData }) {
 					</Card>
 				))}
 			</div>
-
-			{orderedPayables.length === 0 ? (
-				<EmptyState
-					media={<RiCalendarEventLine className="size-8 text-primary" />}
-					title="Nenhuma conta a pagar"
-					description="Cadastre obrigações pontuais e recorrentes para visualizá-las no calendário."
-				>
-					<Button onClick={openCreate}>
-						<RiAddLine className="size-4" />
-						Nova conta a pagar
-					</Button>
-				</EmptyState>
-			) : (
-				<div className="grid gap-4">
-					{orderedPayables.map((item) => {
-						const nextOccurrence = item.occurrences
-							.filter((occurrence) => occurrence.status !== "cancelled")
-							.sort((left, right) =>
-								left.dueDate.localeCompare(right.dueDate),
-							)[0];
-						const visualStatus = nextOccurrence
-							? payableOccurrenceVisualStatus(nextOccurrence)
-							: item.payable.status;
-
-						return (
-							<Card key={item.payable.id} className="overflow-hidden">
-								<CardContent className="p-0">
-									<button
-										type="button"
-										className="flex w-full flex-col gap-4 p-4 text-left transition-colors hover:bg-muted/40 md:flex-row md:items-center md:justify-between"
-										onClick={() => openDetail(item)}
-									>
-										<div className="space-y-1">
-											<div className="flex flex-wrap items-center gap-2">
-												<h3 className="text-base font-semibold">
-													{item.payable.description}
-												</h3>
-												<Badge variant={statusBadgeVariant(visualStatus)}>
-													{visualStatus === "overdue"
-														? "Vencida"
-														: item.payable.status === "cancelled"
-															? "Cancelada"
-															: item.payable.recurrenceType ===
-																		"monthly_variable" &&
-																	nextOccurrence?.status === "awaiting_amount"
-																? "Aguardando valor"
-																: nextOccurrence?.status === "pending"
-																	? "Pendente"
-																	: item.payable.status === "active"
-																		? "Ativa"
-																		: PAYABLE_STATUS_LABELS[
-																				item.payable.status
-																			]}
-												</Badge>
-											</div>
-											<p className="text-sm text-muted-foreground">
-												Fornecedor: {item.payable.supplierName}
-												{item.payable.categoryName
-													? ` · ${item.payable.categoryName}`
-													: ""}
-											</p>
-											<p className="text-xs text-muted-foreground">
-												{RECURRENCE_LABELS[item.payable.recurrenceType]} ·{" "}
-												{item.occurrences.length} ocorrência(s) no horizonte
-											</p>
-										</div>
-										<div className="flex flex-col items-end gap-1">
-											<span className="text-sm font-medium">
-												{nextOccurrence
-													? formatOccurrenceTitle(nextOccurrence)
-													: "Sem ocorrência"}
-											</span>
-											{nextOccurrence ? (
-												<span className="text-xs text-muted-foreground">
-													{formatFinancialDateLabel(
-														nextOccurrence.dueDate,
-														"Vence em",
-														DATE_FORMAT,
-													)}
-												</span>
-											) : null}
-										</div>
-									</button>
-
-									<div className="flex flex-wrap gap-2 border-t px-4 py-3">
-										<Button
-											type="button"
-											variant="outline"
-											size="sm"
-											onClick={() => openEdit(item)}
-										>
-											<RiPencilLine className="size-4" />
-											Editar
-										</Button>
-										<Button
-											type="button"
-											variant="outline"
-											size="sm"
-											onClick={() => setCancelTarget(item)}
-										>
-											<RiCloseLine className="size-4" />
-											Cancelar
-										</Button>
-										<Button
-											type="button"
-											variant="destructive"
-											size="sm"
-											onClick={() => setDeleteTarget(item)}
-										>
-											<RiDeleteBin5Line className="size-4" />
-											Remover
-										</Button>
-									</div>
-								</CardContent>
-							</Card>
-						);
-					})}
+			<MonthlyPeriodSelector period={period} onPeriodChange={setPeriod} />
+			<MonthlySummary period={period} summary={monthlySummary} />
+			<section className="space-y-4">
+				<div className="flex items-center justify-between gap-3">
+					<div>
+						<h2 className="text-xl font-semibold">Este mês</h2>
+						<p className="text-sm text-muted-foreground">
+							Ocorrências da competência selecionada, incluindo estados parciais
+							e vencidos.
+						</p>
+					</div>
+					<Badge variant="outline">
+						{sortedMonthlyOccurrences.length} item(ns)
+					</Badge>
 				</div>
-			)}
+				{sortedMonthlyOccurrences.length === 0 ? (
+					<EmptyState
+						media={<RiCalendarEventLine className="size-8 text-primary" />}
+						title="Nenhuma ocorrência neste mês"
+						description="Selecione outra competência ou cadastre novas ocorrências para o período."
+					/>
+				) : (
+					<div className="grid gap-4">
+						{sortedMonthlyOccurrences.map((item) => (
+							<MonthlyOccurrenceCard
+								key={item.occurrence.id}
+								item={item}
+								onOpenDetails={() => openMonthlyDetail(item)}
+								onInformAmount={() => openMonthlyInform(item)}
+								onPay={() => openMonthlyPay(item)}
+							/>
+						))}
+					</div>
+				)}
+			</section>
+			<section className="space-y-4">
+				<div className="flex items-center justify-between gap-3">
+					<div>
+						<h2 className="text-xl font-semibold">Próximas</h2>
+						<p className="text-sm text-muted-foreground">
+							Ocorrências futuras abertas, excluindo pagas e canceladas.
+						</p>
+					</div>
+					<Badge variant="outline">{upcomingOccurrences.length} item(ns)</Badge>
+				</div>
+				{upcomingOccurrences.length === 0 ? (
+					<EmptyState
+						media={<RiCalendarEventLine className="size-8 text-primary" />}
+						title="Sem próximas ocorrências"
+						description="Não há ocorrências futuras abertas para os próximos períodos."
+					/>
+				) : (
+					<div className="grid gap-4">
+						{upcomingOccurrences.map((item) => (
+							<MonthlyOccurrenceCard
+								key={item.occurrence.id}
+								item={item}
+								onOpenDetails={() => openMonthlyDetail(item)}
+								onInformAmount={() => openMonthlyInform(item)}
+								onPay={() => openMonthlyPay(item)}
+							/>
+						))}
+					</div>
+				)}
+			</section>
+			<section className="space-y-4">
+				<div className="flex items-center justify-between gap-3">
+					<div>
+						<h2 className="text-xl font-semibold">Recorrências / Cadastros</h2>
+						<p className="text-sm text-muted-foreground">
+							Templates administráveis e seus próximos vencimentos já
+							materializados.
+						</p>
+					</div>
+					<Badge variant="outline">{orderedPayables.length} cadastro(s)</Badge>
+				</div>
+				{orderedPayables.length === 0 ? (
+					<EmptyState
+						media={<RiCalendarEventLine className="size-8 text-primary" />}
+						title="Nenhuma conta a pagar"
+						description="Cadastre obrigações pontuais e recorrentes para administrá-las aqui."
+					>
+						<Button onClick={openCreate}>
+							<RiAddLine className="size-4" />
+							Nova conta a pagar
+						</Button>
+					</EmptyState>
+				) : (
+					<div className="grid gap-4">
+						{orderedPayables.map((item) => {
+							const nextOccurrence = item.occurrences
+								.filter((occurrence) => occurrence.status !== "cancelled")
+								.sort((left, right) =>
+									left.dueDate.localeCompare(right.dueDate),
+								)[0];
+							const visualStatus = nextOccurrence
+								? payableOccurrenceVisualStatus(nextOccurrence)
+								: item.payable.status;
 
+							return (
+								<Card key={item.payable.id} className="overflow-hidden">
+									<CardContent className="p-0">
+										<button
+											type="button"
+											className="flex w-full flex-col gap-4 p-4 text-left transition-colors hover:bg-muted/40 md:flex-row md:items-center md:justify-between"
+											onClick={() => openDetail(item)}
+										>
+											<div className="space-y-1">
+												<div className="flex flex-wrap items-center gap-2">
+													<h3 className="text-base font-semibold">
+														{item.payable.description}
+													</h3>
+													<Badge variant={statusBadgeVariant(visualStatus)}>
+														{visualStatus === "overdue"
+															? "Vencida"
+															: item.payable.status === "cancelled"
+																? "Cancelada"
+																: item.payable.recurrenceType ===
+																			"monthly_variable" &&
+																		nextOccurrence?.status === "awaiting_amount"
+																	? "Aguardando valor"
+																	: nextOccurrence?.status === "pending"
+																		? "Pendente"
+																		: item.payable.status === "active"
+																			? "Ativa"
+																			: PAYABLE_STATUS_LABELS[
+																					item.payable.status
+																				]}
+													</Badge>
+													{item.payable.categoryIcon ? (
+														<div
+															className="rounded-full border bg-muted/30 p-1 text-muted-foreground"
+															title={item.payable.categoryName ?? "Categoria"}
+														>
+															<CategoryIcon
+																name={item.payable.categoryIcon}
+																className="size-4"
+															/>
+														</div>
+													) : null}
+												</div>
+												<p className="text-sm text-muted-foreground">
+													Fornecedor: {item.payable.supplierName}
+													{item.payable.categoryName
+														? ` · ${item.payable.categoryName}`
+														: ""}
+												</p>
+												<p className="text-xs text-muted-foreground">
+													{RECURRENCE_LABELS[item.payable.recurrenceType]} ·{" "}
+													{item.occurrences.length} ocorrência(s) no horizonte
+												</p>
+											</div>
+											<div className="flex flex-col items-end gap-1">
+												<span className="text-sm font-medium">
+													{nextOccurrence
+														? formatOccurrenceTitle(nextOccurrence)
+														: "Sem ocorrência"}
+												</span>
+												{nextOccurrence ? (
+													<span className="text-xs text-muted-foreground">
+														{formatFinancialDateLabel(
+															nextOccurrence.dueDate,
+															"Vence em",
+															DATE_FORMAT,
+														)}
+													</span>
+												) : null}
+											</div>
+										</button>
+
+										<div className="flex flex-wrap gap-2 border-t px-4 py-3">
+											<Button
+												type="button"
+												variant="outline"
+												size="sm"
+												onClick={() => openEdit(item)}
+											>
+												<RiPencilLine className="size-4" />
+												Editar
+											</Button>
+											<Button
+												type="button"
+												variant="outline"
+												size="sm"
+												onClick={() => setCancelTarget(item)}
+											>
+												<RiCloseLine className="size-4" />
+												Cancelar
+											</Button>
+											<Button
+												type="button"
+												variant="destructive"
+												size="sm"
+												onClick={() => setDeleteTarget(item)}
+											>
+												<RiDeleteBin5Line className="size-4" />
+												Remover
+											</Button>
+										</div>
+									</CardContent>
+								</Card>
+							);
+						})}
+					</div>
+				)}
+			</section>
 			<PayableFormDialog
 				open={formOpen}
 				mode={formMode}
@@ -1234,7 +1377,6 @@ export function PayablesPage({ data }: { data: PayablesPageData }) {
 				onOpenChange={setFormOpen}
 				onSaved={refresh}
 			/>
-
 			<PayableDetailDialog
 				open={detailOpen}
 				payable={selectedPayable}
@@ -1254,7 +1396,6 @@ export function PayablesPage({ data }: { data: PayablesPageData }) {
 					setPayTarget({ payable: selectedPayable ?? null, occurrence });
 				}}
 			/>
-
 			<InformAmountDialog
 				open={Boolean(informTarget)}
 				occurrence={informTarget?.occurrence ?? null}
@@ -1262,7 +1403,6 @@ export function PayablesPage({ data }: { data: PayablesPageData }) {
 				onOpenChange={(open) => !open && setInformTarget(null)}
 				onSaved={refresh}
 			/>
-
 			<PayablePaymentDialog
 				open={Boolean(payTarget)}
 				occurrence={payTarget?.occurrence ?? null}
@@ -1271,7 +1411,6 @@ export function PayablesPage({ data }: { data: PayablesPageData }) {
 				onOpenChange={(open) => !open && setPayTarget(null)}
 				onSaved={refresh}
 			/>
-
 			<ConfirmActionDialog
 				open={Boolean(deleteTarget)}
 				onOpenChange={(open) => !open && setDeleteTarget(null)}
@@ -1290,7 +1429,6 @@ export function PayablesPage({ data }: { data: PayablesPageData }) {
 					}
 				}}
 			/>
-
 			<ConfirmActionDialog
 				open={Boolean(cancelTarget)}
 				onOpenChange={(open) => !open && setCancelTarget(null)}
