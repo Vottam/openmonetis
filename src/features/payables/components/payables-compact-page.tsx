@@ -3,7 +3,9 @@
 import {
 	RiArrowLeftSLine,
 	RiCalendarEventLine,
+	RiEyeLine,
 	RiHistoryLine,
+	RiMoneyDollarCircleLine,
 	RiPencilLine,
 } from "@remixicon/react";
 import { CategoryIcon } from "@/features/categories/components/category-icon";
@@ -16,6 +18,13 @@ import type {
 	PayableOccurrence,
 	PayableWithOccurrences,
 } from "@/features/payables/lib/types";
+import {
+	buildInformAmountInitialValue,
+	buildPayableOccurrenceDetailFields,
+	getDisplayedOccurrenceAmount,
+	getOccurrenceActionVisibility,
+	isEstimatedOccurrence,
+} from "@/features/payables/lib/page-ux";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent } from "@/shared/components/ui/card";
@@ -27,8 +36,14 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/shared/components/ui/table";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@/shared/components/ui/tooltip";
 import { formatCurrency } from "@/shared/utils/currency";
 import { formatFinancialDateLabel } from "@/shared/utils/financial-dates";
+import { cn } from "@/shared/utils/ui";
 
 const DATE_FORMAT: Intl.DateTimeFormatOptions = {
 	day: "2-digit",
@@ -52,34 +67,96 @@ function lastPaymentDate(occurrence: PayableOccurrence): string | null {
 function statusBadges(occurrence: PayableOccurrence) {
 	const badges: Array<{
 		label: string;
-		variant: "default" | "outline" | "destructive" | "secondary";
+		variant: "default" | "outline" | "destructive" | "secondary" | "success" | "info";
+		className?: string;
 	}> = [];
 
 	switch (occurrence.status) {
 		case "awaiting_amount":
-			badges.push({ label: "Aguardando valor", variant: "secondary" });
+			badges.push({
+				label: "Aguardando valor",
+				variant: "secondary",
+				className:
+					"border-info/30 bg-info/10 text-info dark:border-info/40 dark:bg-info/15",
+			});
 			break;
 		case "partial":
-			badges.push({ label: "Parcial", variant: "default" });
+			badges.push({
+				label: "Parcial",
+				variant: "outline",
+				className:
+					"border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-500/40 dark:bg-orange-950/40 dark:text-orange-200",
+			});
 			break;
 		case "paid":
-			badges.push({ label: "Paga", variant: "default" });
+			badges.push({
+				label: "Paga",
+				variant: "success",
+				className: "border-success/30 bg-success/10 text-success",
+			});
 			break;
 		case "scheduled":
-			badges.push({ label: "Agendada", variant: "secondary" });
+			badges.push({
+				label: "Agendada",
+				variant: "secondary",
+				className: "border-slate-300 bg-slate-100 text-slate-700",
+			});
 			break;
 		default:
 			badges.push({
 				label: occurrence.isOverdue ? "Vencida" : "Pendente",
 				variant: occurrence.isOverdue ? "destructive" : "outline",
+				className: occurrence.isOverdue
+					? undefined
+					: "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-200",
 			});
 	}
 
 	if (occurrence.status === "partial" && occurrence.isOverdue) {
-		badges.push({ label: "Vencida", variant: "destructive" });
+		badges.push({
+			label: "Vencida",
+			variant: "destructive",
+		});
 	}
 
 	return badges;
+}
+
+
+function IconActionButton({
+	label,
+	icon,
+	onClick,
+	variant = "outline",
+	className,
+}: {
+	label: string;
+	icon: any;
+	onClick: () => void;
+	variant?: "default" | "outline" | "destructive" | "secondary" | "ghost";
+	className?: string;
+}) {
+	const Icon = icon;
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<Button
+					type="button"
+					variant={variant}
+					size="icon-sm"
+					className={cn("shrink-0", className)}
+					onClick={onClick}
+					aria-label={label}
+				>
+					<Icon className="size-4" aria-hidden />
+					<span className="sr-only">{label}</span>
+				</Button>
+			</TooltipTrigger>
+			<TooltipContent side="bottom" sideOffset={8}>
+				{label}
+			</TooltipContent>
+		</Tooltip>
+	);
 }
 
 export function PayablesCompactPage({
@@ -98,6 +175,7 @@ export function PayablesCompactPage({
 	onEditPayable,
 	onCancelPayable,
 	onDeletePayable,
+	onOpenPayableHistory,
 	onOpenHistory,
 }: {
 	view: "operational" | "history";
@@ -108,13 +186,14 @@ export function PayablesCompactPage({
 	summary: MonthlySummary;
 	occurrences: MonthlyPayableOccurrence[];
 	payables: PayableWithOccurrences[];
-	onOpenOccurrenceDetails: (occurrence: PayableOccurrence) => void;
-	onInformAmount: (occurrence: PayableOccurrence) => void;
-	onPay: (occurrence: PayableOccurrence) => void;
+	onOpenOccurrenceDetails: (item: MonthlyPayableOccurrence) => void;
+	onInformAmount: (item: MonthlyPayableOccurrence) => void;
+	onPay: (item: MonthlyPayableOccurrence) => void;
 	onOpenPayableDetails: (payable: PayableWithOccurrences) => void;
 	onEditPayable: (payable: PayableWithOccurrences) => void;
 	onCancelPayable: (payable: PayableWithOccurrences) => void;
 	onDeletePayable: (payable: PayableWithOccurrences) => void;
+	onOpenPayableHistory?: (payable: PayableWithOccurrences) => void;
 	onOpenHistory?: (payable: MonthlyPayableOccurrence) => void;
 }) {
 	const titleText =
@@ -151,12 +230,21 @@ export function PayablesCompactPage({
 			) : null}
 
 			<div className="grid gap-3 sm:grid-cols-3">
-				<SummaryCard label="Pago" value={formatCurrency(summary.paid)} />
+				<SummaryCard
+					label="Pago"
+					value={formatCurrency(summary.paid)}
+					tone="success"
+				/>
 				<SummaryCard
 					label="A pagar"
 					value={formatCurrency(summary.remaining)}
+					tone="warning"
 				/>
-				<SummaryCard label="Total" value={formatCurrency(summary.totalKnown)} />
+				<SummaryCard
+					label="Total"
+					value={formatCurrency(summary.totalKnown)}
+					tone="neutral"
+				/>
 			</div>
 
 			<section className="space-y-4">
@@ -195,6 +283,9 @@ export function PayablesCompactPage({
 								const occurrence = item.occurrence;
 								const paymentDate = lastPaymentDate(occurrence);
 								const badges = statusBadges(occurrence);
+								const actionVisibility = getOccurrenceActionVisibility(item, view);
+								const displayedAmount = getDisplayedOccurrenceAmount(occurrence);
+								const isEstimated = isEstimatedOccurrence(item.payable, occurrence);
 								return (
 									<TableRow key={occurrence.id}>
 										<TableCell className="whitespace-nowrap font-medium">
@@ -204,7 +295,7 @@ export function PayablesCompactPage({
 											<button
 												type="button"
 												className="text-left font-medium hover:underline"
-												onClick={() => onOpenOccurrenceDetails(occurrence)}
+												onClick={() => onOpenOccurrenceDetails(item)}
 											>
 												{item.payable.description}
 											</button>
@@ -224,11 +315,10 @@ export function PayablesCompactPage({
 											</div>
 										</TableCell>
 										<TableCell>
-											{occurrence.expectedAmount !== null ? (
+											{displayedAmount !== null ? (
 												<>
-													{formatCurrency(occurrence.expectedAmount)}
-													{item.payable.recurrenceType === "monthly_variable" &&
-													occurrence.actualAmount === null ? (
+													{formatCurrency(displayedAmount)}
+													{isEstimated ? (
 														<Badge variant="secondary" className="ml-1">
 															Estimado
 														</Badge>
@@ -250,7 +340,7 @@ export function PayablesCompactPage({
 										<TableCell>
 											<div className="flex flex-wrap gap-1">
 												{badges.map((badge) => (
-													<Badge key={badge.label} variant={badge.variant}>
+													<Badge key={badge.label} variant={badge.variant} className={badge.className}>
 														{badge.label}
 													</Badge>
 												))}
@@ -266,62 +356,44 @@ export function PayablesCompactPage({
 												: "—"}
 										</TableCell>
 										<TableCell>
-											<div className="flex justify-end gap-2">
-												{onOpenHistory ? (
-													<Button
-														type="button"
-														size="sm"
-														variant="outline"
+											<div className="flex justify-end gap-1.5">
+												{actionVisibility.showHistory && onOpenHistory ? (
+													<IconActionButton
+														label="Ver histórico"
+														icon={RiHistoryLine}
 														onClick={() => onOpenHistory(item)}
-													>
-														<RiHistoryLine className="size-4" />
-														Histórico
-													</Button>
+													/>
 												) : null}
-												{occurrence.status === "awaiting_amount" ? (
-													<Button
-														type="button"
-														size="sm"
-														variant="outline"
-														onClick={() => onInformAmount(occurrence)}
-													>
-														Informar valor
-													</Button>
+												{actionVisibility.showInformAmount ? (
+													<IconActionButton
+														label={
+															isEstimated
+																? "Informar valor real desta competência"
+																: "Informar valor desta competência"
+														}
+														icon={RiPencilLine}
+														onClick={() => onInformAmount(item)}
+													/>
 												) : null}
-												{item.payable.recurrenceType === "monthly_variable" &&
-												occurrence.expectedAmount !== null &&
-												occurrence.actualAmount === null ? (
-													<Button
-														type="button"
-														size="sm"
-														variant="outline"
-														onClick={() => onInformAmount(occurrence)}
-														title="Informar valor real desta competência"
-													>
-														Atualizar valor
-													</Button>
+												{actionVisibility.showPay ? (
+													<IconActionButton
+														label={
+															item.occurrence.status === "partial" &&
+															(occurrence.remainingAmount ?? 0) > 0
+																? "Pagar restante"
+																: "Pagar"
+														}
+														icon={RiMoneyDollarCircleLine}
+														variant="default"
+														className="bg-orange-500 text-white hover:bg-orange-600 focus-visible:ring-orange-500/30 dark:bg-orange-500 dark:hover:bg-orange-600"
+														onClick={() => onPay(item)}
+													/>
 												) : null}
-												{occurrence.status === "pending" ||
-												occurrence.status === "partial" ? (
-													<Button
-														type="button"
-														size="sm"
-														onClick={() => onPay(occurrence)}
-													>
-														{occurrence.status === "partial" &&
-														(occurrence.remainingAmount ?? 0) > 0
-															? "Pagar restante"
-															: "Pagar"}
-													</Button>
-												) : null}
-												<Button
-													type="button"
-													size="sm"
-													variant="outline"
-													onClick={() => onOpenOccurrenceDetails(occurrence)}
-												>
-													Detalhes
-												</Button>
+												<IconActionButton
+													label="Detalhes"
+													icon={RiEyeLine}
+													onClick={() => onOpenOccurrenceDetails(item)}
+												/>
 											</div>
 										</TableCell>
 									</TableRow>
@@ -335,6 +407,9 @@ export function PayablesCompactPage({
 					{occurrences.map((item) => {
 						const occurrence = item.occurrence;
 						const badges = statusBadges(occurrence);
+						const actionVisibility = getOccurrenceActionVisibility(item, view);
+						const displayedAmount = getDisplayedOccurrenceAmount(occurrence);
+						const isEstimated = isEstimatedOccurrence(item.payable, occurrence);
 						return (
 							<Card key={occurrence.id} className="border-border/70">
 								<CardContent className="space-y-3 p-4">
@@ -351,7 +426,7 @@ export function PayablesCompactPage({
 													{item.payable.description}
 												</h3>
 												{badges.map((badge) => (
-													<Badge key={badge.label} variant={badge.variant}>
+													<Badge key={badge.label} variant={badge.variant} className={badge.className}>
 														{badge.label}
 													</Badge>
 												))}
@@ -371,12 +446,10 @@ export function PayablesCompactPage({
 												{item.payable.categoryName ?? "Sem categoria"}
 											</p>
 											<p className="text-sm font-medium">
-												{occurrence.expectedAmount !== null ? (
+												{displayedAmount !== null ? (
 													<>
-														{formatCurrency(occurrence.expectedAmount)}
-														{item.payable.recurrenceType ===
-															"monthly_variable" &&
-														occurrence.actualAmount === null ? (
+														{formatCurrency(displayedAmount)}
+														{isEstimated ? (
 															<Badge variant="secondary" className="ml-1">
 																Estimado
 															</Badge>
@@ -391,50 +464,43 @@ export function PayablesCompactPage({
 										</div>
 									</div>
 									<div className="flex flex-wrap gap-2">
-										{occurrence.status === "awaiting_amount" ? (
-											<Button
-												type="button"
-												variant="outline"
-												size="sm"
-												onClick={() => onInformAmount(occurrence)}
-											>
-												Informar valor
-											</Button>
+										{actionVisibility.showHistory && onOpenHistory ? (
+											<IconActionButton
+												label="Ver histórico"
+												icon={RiHistoryLine}
+												onClick={() => onOpenHistory(item)}
+											/>
 										) : null}
-										{item.payable.recurrenceType === "monthly_variable" &&
-										occurrence.expectedAmount !== null &&
-										occurrence.actualAmount === null ? (
-											<Button
-												type="button"
-												variant="outline"
-												size="sm"
-												onClick={() => onInformAmount(occurrence)}
-												title="Informar valor real desta competência"
-											>
-												Atualizar valor
-											</Button>
+										{actionVisibility.showInformAmount ? (
+											<IconActionButton
+												label={
+													isEstimated
+														? "Informar valor real desta competência"
+														: "Informar valor desta competência"
+												}
+												icon={RiPencilLine}
+												onClick={() => onInformAmount(item)}
+											/>
 										) : null}
-										{occurrence.status === "pending" ||
-										occurrence.status === "partial" ? (
-											<Button
-												type="button"
-												size="sm"
-												onClick={() => onPay(occurrence)}
-											>
-												{occurrence.status === "partial" &&
-												(occurrence.remainingAmount ?? 0) > 0
-													? "Pagar restante"
-													: "Pagar"}
-											</Button>
+										{actionVisibility.showPay ? (
+											<IconActionButton
+												label={
+													item.occurrence.status === "partial" &&
+													(occurrence.remainingAmount ?? 0) > 0
+														? "Pagar restante"
+														: "Pagar"
+												}
+												icon={RiMoneyDollarCircleLine}
+												variant="default"
+												className="bg-orange-500 text-white hover:bg-orange-600 focus-visible:ring-orange-500/30 dark:bg-orange-500 dark:hover:bg-orange-600"
+												onClick={() => onPay(item)}
+											/>
 										) : null}
-										<Button
-											type="button"
-											variant="outline"
-											size="sm"
-											onClick={() => onOpenOccurrenceDetails(occurrence)}
-										>
-											Detalhes
-										</Button>
+										<IconActionButton
+											label="Detalhes"
+											icon={RiEyeLine}
+											onClick={() => onOpenOccurrenceDetails(item)}
+										/>
 									</div>
 								</CardContent>
 							</Card>
@@ -516,6 +582,13 @@ export function PayablesCompactPage({
 										</TableCell>
 										<TableCell>
 											<div className="flex justify-end gap-2">
+												{onOpenPayableHistory ? (
+													<IconActionButton
+														label="Ver competências"
+														icon={RiCalendarEventLine}
+														onClick={() => onOpenPayableHistory(item)}
+													/>
+												) : null}
 												<Button
 													type="button"
 													variant="outline"
@@ -554,12 +627,33 @@ export function PayablesCompactPage({
 	);
 }
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
+function SummaryCard({
+	label,
+	value,
+	tone = "neutral",
+}: {
+	label: string;
+	value: string;
+	tone?: "success" | "warning" | "neutral";
+}) {
+	const toneClasses =
+		tone === "success"
+			? "border-l-success/70 bg-success/5"
+			: tone === "warning"
+				? "border-l-amber-500/70 bg-amber-500/5"
+				: "border-l-slate-400/70 bg-slate-500/5";
+	const valueClasses =
+		tone === "success"
+			? "text-success"
+			: tone === "warning"
+				? "text-amber-700 dark:text-amber-200"
+				: "text-slate-700 dark:text-slate-200";
+
 	return (
-		<Card>
+		<Card className={cn("border-l-4", toneClasses)}>
 			<CardContent className="p-4">
 				<p className="text-xs uppercase text-muted-foreground">{label}</p>
-				<p className="text-xl font-semibold">{value}</p>
+				<p className={cn("text-xl font-semibold", valueClasses)}>{value}</p>
 			</CardContent>
 		</Card>
 	);

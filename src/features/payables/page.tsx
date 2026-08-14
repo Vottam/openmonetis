@@ -26,6 +26,11 @@ import {
 	sortMonthlyPayableOccurrences,
 } from "@/features/payables/lib/monthly-read-model";
 import { useMonthlyPeriod } from "@/features/payables/lib/use-monthly-period";
+import {
+	buildInformAmountInitialValue,
+	buildPayableHistoryHref,
+	buildPayableOccurrenceDetailFields,
+} from "@/features/payables/lib/page-ux";
 import { PAYMENT_METHODS } from "@/features/transactions/lib/constants";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
 import { EmptyState } from "@/shared/components/feedback/empty-state";
@@ -597,21 +602,15 @@ function PayableDetailDialog({
 								</span>
 							</div>
 							<div className="flex items-center justify-between gap-3">
-								<span className="text-muted-foreground">
-									Primeiro vencimento
-								</span>
-								<span className="font-medium">
-									{formatDateOnly(payable.payable.startsAt)}
-								</span>
+								<span className="text-muted-foreground">Primeiro vencimento</span>
+								<span className="font-medium">{formatDateOnly(payable.payable.startsAt)}</span>
 							</div>
 							<div className="flex items-center justify-between gap-3">
 								<span className="text-muted-foreground">Categoria</span>
-								<span className="font-medium">
-									{payable.payable.categoryName ?? "—"}
-								</span>
+								<span className="font-medium">{payable.payable.categoryName ?? "—"}</span>
 							</div>
-						</CardContent>
-					</Card>
+					</CardContent>
+				</Card>
 
 					<Card>
 						<CardHeader className="pb-3">
@@ -622,78 +621,67 @@ function PayableDetailDialog({
 						</CardHeader>
 						<CardContent className="space-y-3">
 							{openOccurrences.length === 0 ? (
-								<p className="text-sm text-muted-foreground">
-									Nenhuma ocorrência no horizonte.
-								</p>
+								<p className="text-sm text-muted-foreground">Nenhuma ocorrência no horizonte.</p>
 							) : (
 								openOccurrences.map((occurrence) => {
-									const visualStatus =
-										payableOccurrenceVisualStatus(occurrence);
+									const visualStatus = payableOccurrenceVisualStatus(occurrence);
 									const isEstimated =
 										payable.payable.recurrenceType === "monthly_variable" &&
 										occurrence.expectedAmount !== null &&
 										occurrence.actualAmount === null;
+									const detailFields = buildPayableOccurrenceDetailFields({
+										payable: payable.payable,
+										occurrence,
+									} as MonthlyPayableOccurrence);
+
 									return (
-										<div
-											key={occurrence.id}
-											className="flex items-center justify-between gap-3 rounded-lg border p-3"
-										>
-											<div className="space-y-1">
-												<div className="flex items-center gap-2">
-													<span className="text-sm font-medium">
-														{occurrence.period}
-													</span>
-													<Badge variant={statusBadgeVariant(visualStatus)}>
-														{visualStatus === "overdue"
-															? "Vencida"
-															: OCCURRENCE_STATUS_LABELS[occurrence.status]}
-													</Badge>
+										<div key={occurrence.id} className="space-y-3 rounded-lg border p-3">
+											<div className="flex flex-wrap items-start justify-between gap-3">
+												<div className="space-y-1">
+													<div className="flex flex-wrap items-center gap-2">
+														<span className="text-sm font-medium">{occurrence.period}</span>
+														<Badge variant={statusBadgeVariant(visualStatus)}>
+															{visualStatus === "overdue"
+																? "Vencida"
+																: OCCURRENCE_STATUS_LABELS[occurrence.status]}
+														</Badge>
+														{isEstimated ? (
+															<Badge variant="secondary" className="border-info/30 bg-info/10 text-info">
+																Estimado
+															</Badge>
+														) : null}
+													</div>
+													<p className="text-xs text-muted-foreground">
+														{formatFinancialDateLabel(occurrence.dueDate, "Vence em", DATE_FORMAT)}
+													</p>
+													<p className="text-sm font-medium">{formatOccurrenceTitle(occurrence, payable.payable)}</p>
 												</div>
-												<p className="text-xs text-muted-foreground">
-													{formatFinancialDateLabel(
-														occurrence.dueDate,
-														"Vence em",
-														DATE_FORMAT,
-													)}
-												</p>
+												<div className="flex flex-wrap gap-2">
+													{occurrence.status === "awaiting_amount" ? (
+														<Button type="button" size="sm" variant="outline" onClick={() => onInformAmount(occurrence)}>
+															Informar valor
+														</Button>
+													) : null}
+													{isEstimated ? (
+														<Button type="button" size="sm" variant="outline" onClick={() => onInformAmount(occurrence)} title="Informar valor real desta competência">
+															Atualizar valor
+														</Button>
+													) : null}
+													{occurrence.status === "pending" || occurrence.status === "partial" ? (
+														<Button type="button" size="sm" variant="default" onClick={() => onPay(occurrence)}>
+															Pagar
+														</Button>
+													) : null}
+												</div>
 											</div>
-											<div className="flex items-center gap-2">
-												<span className="text-sm font-medium">
-													{formatOccurrenceTitle(occurrence, payable.payable)}
-												</span>
-												{occurrence.status === "awaiting_amount" ? (
-													<Button
-														type="button"
-														size="sm"
-														variant="outline"
-														onClick={() => onInformAmount(occurrence)}
-													>
-														Informar valor
-													</Button>
-												) : null}
-												{isEstimated ? (
-													<Button
-														type="button"
-														size="sm"
-														variant="outline"
-														onClick={() => onInformAmount(occurrence)}
-														title="Informar valor real desta competência"
-													>
-														Atualizar valor
-													</Button>
-												) : null}
-												{occurrence.status === "pending" ||
-												occurrence.status === "partial" ? (
-													<Button
-														type="button"
-														size="sm"
-														variant="default"
-														onClick={() => onPay(occurrence)}
-													>
-														Pagar
-													</Button>
-												) : null}
-											</div>
+											<dl className="grid gap-x-4 gap-y-2 text-xs text-muted-foreground sm:grid-cols-2">
+												{detailFields.map((field) => (
+													<div key={field.label} className="space-y-0.5">
+														<dt className="font-medium text-foreground">{field.label}</dt>
+														<dd>{field.value}</dd>
+													</div>
+												))}
+											</dl>
 										</div>
 									);
 								})
@@ -704,30 +692,18 @@ function PayableDetailDialog({
 
 				<DialogFooter className="gap-2 sm:justify-between">
 					<div className="flex gap-2">
-						<Button
-							type="button"
-							variant="outline"
-							onClick={() => onEdit(payable)}
-						>
+						<Button type="button" variant="outline" onClick={() => onEdit(payable)}>
 							<RiPencilLine className="size-4" />
 							Editar
 						</Button>
-						<Button
-							type="button"
-							variant="outline"
-							onClick={() => onCancel(payable)}
-						>
+						<Button type="button" variant="outline" onClick={() => onCancel(payable)}>
 							<RiCloseLine className="size-4" />
-							Cancelar
+							Inativar
 						</Button>
 					</div>
-					<Button
-						type="button"
-						variant="destructive"
-						onClick={() => onDelete(payable)}
-					>
+					<Button type="button" variant="destructive" onClick={() => onDelete(payable)}>
 						<RiDeleteBin5Line className="size-4" />
-						Remover
+						Excluir
 					</Button>
 				</DialogFooter>
 			</DialogContent>
@@ -953,13 +929,14 @@ function InformAmountDialog({
 	const [isPending, startTransition] = useTransition();
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const visible = open && !!occurrence && !!payable;
+	const estimatedAmount = occurrence?.expectedAmount ?? occurrence?.actualAmount ?? occurrence?.remainingAmount ?? null;
 
 	useEffect(() => {
-		if (visible) {
-			setValue("");
+		if (visible && occurrence) {
+			setValue(buildInformAmountInitialValue(occurrence));
 			setErrorMessage(null);
 		}
-	}, [visible]);
+	}, [visible, occurrence]);
 
 	const submit = async () => {
 		const normalized = normalizeDecimalInput(value);
@@ -987,44 +964,57 @@ function InformAmountDialog({
 		});
 	};
 
+	const detailFields = payable && occurrence
+		? buildPayableOccurrenceDetailFields({ payable: payable.payable, occurrence } as MonthlyPayableOccurrence)
+		: [];
+
 	return (
 		<Dialog open={visible} onOpenChange={onOpenChange}>
 			<DialogContent>
 				<DialogHeader>
-					<DialogTitle>Informar valor</DialogTitle>
+					<DialogTitle>
+						{occurrence?.expectedAmount !== null || occurrence?.actualAmount !== null
+							? "Atualizar valor"
+							: "Informar valor"}
+					</DialogTitle>
 					<DialogDescription>
-						{payable ? payable.payable.description : "Conta a pagar"} ·{" "}
-						{occurrence?.period}
+						{payable ? payable.payable.description : "Conta a pagar"} · {occurrence?.period}
 					</DialogDescription>
 				</DialogHeader>
 
-				<div className="space-y-2">
-					<Label htmlFor="payable-amount-input">Valor</Label>
-					<Input
-						id="payable-amount-input"
-						value={value}
-						onChange={(event) => setValue(event.target.value)}
-						placeholder="0,00"
-					/>
+				<div className="grid gap-4">
+					<div className="grid gap-3 sm:grid-cols-2">
+						{detailFields.map((field) => (
+							<div key={field.label} className="rounded-lg border p-3 text-sm">
+								<div className="text-xs uppercase text-muted-foreground">{field.label}</div>
+								<div className="font-medium">{field.value}</div>
+							</div>
+						))}
+					</div>
+
+					<div className="space-y-2">
+						<Label htmlFor="payable-amount-input">Valor real</Label>
+						<Input
+							id="payable-amount-input"
+							value={value}
+							onChange={(event) => setValue(event.target.value)}
+							placeholder="0,00"
+						/>
+						{estimatedAmount !== null ? (
+							<p className="text-xs text-muted-foreground">
+								Valor atual de referência: {formatMoneyValue(estimatedAmount)}
+							</p>
+						) : null}
+					</div>
 				</div>
 
-				{errorMessage ? (
-					<p className="text-sm text-destructive">{errorMessage}</p>
-				) : null}
+				{errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
 
 				<DialogFooter>
-					<Button
-						type="button"
-						variant="outline"
-						onClick={() => onOpenChange(false)}
-					>
+					<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
 						Cancelar
 					</Button>
-					<Button
-						type="button"
-						onClick={() => void submit()}
-						disabled={isPending}
-					>
+					<Button type="button" onClick={() => void submit()} disabled={isPending}>
 						{isPending ? "Salvando..." : "Salvar"}
 					</Button>
 				</DialogFooter>
@@ -1144,29 +1134,48 @@ export function PayablesPage({
 		setDetailOpen(true);
 	};
 
-	const openHistory = (item: MonthlyPayableOccurrence) => {
-		router.push(`/payables/${item.payable.id}`);
+	const openHistory = (payable: PayableWithOccurrences) => {
+		router.push(buildPayableHistoryHref(payable.payable.id));
+	};
+
+	const openOccurrenceHistory = (item: MonthlyPayableOccurrence) => {
+		router.push(buildPayableHistoryHref(item.payable.id));
 	};
 
 	const openMonthlyDetail = (item: MonthlyPayableOccurrence) => {
-		setSelectedPayable(findPayableById(item.payable.id));
+		const payable = findPayableById(item.payable.id);
+		if (!payable) {
+			toast.error("Conta a pagar não encontrada.");
+			return;
+		}
+		setSelectedPayable(payable);
 		setDetailOpen(true);
 	};
 
 	const openMonthlyInform = (item: MonthlyPayableOccurrence) => {
-		setSelectedPayable(findPayableById(item.payable.id));
+		const payable = findPayableById(item.payable.id);
+		if (!payable) {
+			toast.error("Conta a pagar não encontrada.");
+			return;
+		}
+		setSelectedPayable(payable);
 		setDetailOpen(false);
 		setInformTarget({
-			payable: findPayableById(item.payable.id),
+			payable,
 			occurrence: item.occurrence as PayableOccurrence,
 		});
 	};
 
 	const openMonthlyPay = (item: MonthlyPayableOccurrence) => {
-		setSelectedPayable(findPayableById(item.payable.id));
+		const payable = findPayableById(item.payable.id);
+		if (!payable) {
+			toast.error("Conta a pagar não encontrada.");
+			return;
+		}
+		setSelectedPayable(payable);
 		setDetailOpen(false);
 		setPayTarget({
-			payable: findPayableById(item.payable.id),
+			payable,
 			occurrence: item.occurrence as PayableOccurrence,
 		});
 	};
@@ -1230,10 +1239,11 @@ export function PayablesPage({
 					summary={historySummaryOnly}
 					occurrences={sortMonthlyPayableOccurrences(historyOccurrenceItems)}
 					payables={data.payables}
-					onOpenOccurrenceDetails={openMonthlyDetail as never}
-					onInformAmount={openMonthlyInform as never}
-					onPay={openMonthlyPay as never}
+					onOpenOccurrenceDetails={openMonthlyDetail}
+					onInformAmount={openMonthlyInform}
+					onPay={openMonthlyPay}
 					onOpenPayableDetails={openDetail}
+					onOpenPayableHistory={openHistory}
 					onEditPayable={openEdit}
 					onCancelPayable={(item) => setCancelTarget(item)}
 					onDeletePayable={(item) => setDeleteTarget(item)}
@@ -1270,14 +1280,15 @@ export function PayablesPage({
 				summary={monthlySummary}
 				occurrences={sortedOperationalOccurrences}
 				payables={data.payables}
-				onOpenOccurrenceDetails={openMonthlyDetail as never}
-				onInformAmount={openMonthlyInform as never}
-				onPay={openMonthlyPay as never}
+				onOpenOccurrenceDetails={openMonthlyDetail}
+				onInformAmount={openMonthlyInform}
+				onPay={openMonthlyPay}
 				onOpenPayableDetails={openDetail}
 				onEditPayable={openEdit}
 				onCancelPayable={(item) => setCancelTarget(item)}
 				onDeletePayable={(item) => setDeleteTarget(item)}
-				onOpenHistory={openHistory}
+				onOpenHistory={openOccurrenceHistory}
+				onOpenPayableHistory={openHistory}
 			/>
 
 			<PayableFormDialog
@@ -1345,12 +1356,12 @@ export function PayablesPage({
 				onOpenChange={(open) => !open && setCancelTarget(null)}
 				title={
 					cancelTarget
-						? `Cancelar ${cancelTarget.payable.description}?`
-						: "Cancelar conta a pagar?"
+						? `Inativar ${cancelTarget.payable.description}?`
+						: "Inativar conta a pagar?"
 				}
-				description="O template será cancelado e as ocorrências abertas também serão marcadas como canceladas."
-				confirmLabel="Cancelar"
-				pendingLabel="Cancelando..."
+				description="O template será inativado e as ocorrências abertas também serão marcadas como canceladas."
+				confirmLabel="Inativar"
+				pendingLabel="Inativando..."
 				confirmVariant="destructive"
 				onConfirm={async () => {
 					if (cancelTarget) {
