@@ -71,6 +71,21 @@ describe("horizon de payables", () => {
 		expect(periods[5]).toBe("2027-01");
 	});
 
+	it("gera o contrato inteiro quando endsAt existe", () => {
+		const periods = buildPayableOccurrencePeriodRange(
+			makeMonthlyFixedTemplate({
+				startsAt: "2026-08-10",
+				endsAt: "2029-08-10",
+			}),
+			"2026-08",
+			PAYABLE_OCCURRENCE_HORIZON_MONTHS,
+		);
+
+		expect(periods[0]).toBe("2026-08");
+		expect(periods.at(-1)).toBe("2029-08");
+		expect(periods.length).toBeGreaterThan(PAYABLE_OCCURRENCE_HORIZON_MONTHS);
+		expect(periods).toHaveLength(37);
+	});
 	it("gera ocorrências variáveis com valor esperado nulo e estado aguardando valor", () => {
 		const seeds = buildPayableOccurrenceSeeds({
 			template: makeMonthlyVariableTemplate(),
@@ -87,6 +102,7 @@ describe("horizon de payables", () => {
 			}),
 		);
 	});
+
 
 	it("não duplica períodos quando o horizonte é recalculado com os mesmos meses já existentes", () => {
 		const template = makeMonthlyFixedTemplate();

@@ -27,6 +27,9 @@ import {
 	isEstimatedOccurrence,
 	formatPayableRecurrenceLabel,
 	formatPayableTemplatePeriod,
+	getPayableLifecycleActionLabel,
+	getPayableLifecycleLabel,
+	getPayableLifecycleState,
 } from "@/features/payables/lib/page-ux";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
@@ -592,14 +595,19 @@ export function PayablesCompactPage({
 										<TableCell>
 											<Badge
 												variant={
-													item.payable.status === "active"
+													getPayableLifecycleState(item.payable) === "active"
 														? "outline"
-														: "destructive"
+														: getPayableLifecycleState(item.payable) === "inactive"
+															? "secondary"
+															: "secondary"
+												}
+												className={
+													getPayableLifecycleState(item.payable) === "expired"
+														? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-200"
+														: undefined
 												}
 											>
-												{item.payable.status === "active"
-													? "Ativa"
-													: "Cancelada"}
+												{getPayableLifecycleLabel(item.payable)}
 											</Badge>
 										</TableCell>
 										<TableCell>
@@ -616,12 +624,21 @@ export function PayablesCompactPage({
 													icon={RiPencilLine}
 													onClick={() => onEditPayable(item)}
 												/>
-												<IconActionButton
-													label={item.payable.status === "active" ? "Inativar" : "Ativar"}
-													icon={RiToggleLine}
-													onClick={() => onCancelPayable(item)}
-													variant="outline"
-												/>
+												{getPayableLifecycleState(item.payable) === "expired" ? (
+													<IconActionButton
+														label="Renovar"
+														icon={RiPencilLine}
+														onClick={() => onEditPayable(item)}
+														variant="outline"
+													/>
+												) : (
+													<IconActionButton
+														label={getPayableLifecycleActionLabel(item.payable)}
+														icon={RiToggleLine}
+														onClick={() => onCancelPayable(item)}
+														variant="outline"
+													/>
+												)}
 												<IconActionButton
 													label="Excluir"
 													icon={RiDeleteBin5Line}

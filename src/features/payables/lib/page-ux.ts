@@ -1,5 +1,7 @@
 import type { MonthlyPayableOccurrence } from "@/features/payables/lib/monthly-read-model";
-import type { PayableOccurrence, PayableRecurrenceType, PayableWithOccurrences } from "./types";
+import { getBusinessDateString } from "@/shared/utils/date";
+import type {
+	PayableOccurrence, PayableRecurrenceType, PayableWithOccurrences } from "./types";
 
 export type OccurrenceActionVisibility = {
 	showHistory: boolean;
@@ -62,6 +64,46 @@ export function formatPayableRecurrenceLabel(
 	recurrenceType: PayableRecurrenceType,
 ): string {
 	return PAYABLE_RECURRENCE_LABELS[recurrenceType];
+}
+
+export type PayableLifecycleState = "active" | "inactive" | "expired";
+
+export const PAYABLE_LIFECYCLE_LABELS: Record<PayableLifecycleState, string> = {
+	active: "Ativa",
+	inactive: "Inativa",
+	expired: "Contrato encerrado",
+};
+
+export function getPayableLifecycleState(
+	payable: Pick<PayableWithOccurrences["payable"], "endsAt" | "status">,
+	referenceDate: string = getBusinessDateString(),
+): PayableLifecycleState {
+	if (payable.endsAt && payable.endsAt < referenceDate) {
+		return "expired";
+	}
+
+	return payable.status === "cancelled" ? "inactive" : "active";
+}
+
+export function getPayableLifecycleLabel(
+	payable: Pick<PayableWithOccurrences["payable"], "endsAt" | "status">,
+	referenceDate: string = getBusinessDateString(),
+): string {
+	return PAYABLE_LIFECYCLE_LABELS[getPayableLifecycleState(payable, referenceDate)];
+}
+
+export function getPayableLifecycleActionLabel(
+	payable: Pick<PayableWithOccurrences["payable"], "endsAt" | "status">,
+	referenceDate: string = getBusinessDateString(),
+): string {
+	const state = getPayableLifecycleState(payable, referenceDate);
+	if (state === "inactive") {
+		return "Ativar";
+	}
+	if (state === "expired") {
+		return "Renovar";
+	}
+	return "Inativar";
 }
 
 function formatMonthYear(value: string | null | undefined): string {

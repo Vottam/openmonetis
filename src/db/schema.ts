@@ -1327,6 +1327,7 @@ export const accountsPayable = pgTable("accounts_payable", {
 	dueDay: smallint("due_day"),
 	startsAt: date("starts_at").notNull(),
 	endsAt: date("ends_at"),
+	deactivatedAt: date("deactivated_at"),
 	status: text("status").default("active").notNull(),
 	createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
 		.defaultNow()

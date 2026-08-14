@@ -10,6 +10,9 @@ import {
 	getDisplayedOccurrenceAmount,
 	getOccurrenceActionVisibility,
 	isEstimatedOccurrence,
+	getPayableLifecycleActionLabel,
+	getPayableLifecycleLabel,
+	getPayableLifecycleState,
 } from "./page-ux";
 
 const normalize = (value: string) => value.replaceAll("\u00a0", " ");
@@ -45,6 +48,24 @@ describe("page-ux", () => {
 		expect(formatPayableRecurrenceLabel("once")).toBe("Única");
 		expect(formatPayableRecurrenceLabel("monthly_fixed")).toBe("Mensal fixa");
 		expect(formatPayableRecurrenceLabel("monthly_variable")).toBe("Mensal variável");
+	});
+
+	it("LIFECYCLE_LABELS_ARE_HUMAN_READABLE", () => {
+		expect(getPayableLifecycleState({ status: "active", endsAt: null })).toBe("active");
+		expect(getPayableLifecycleLabel({ status: "active", endsAt: null })).toBe("Ativa");
+		expect(getPayableLifecycleActionLabel({ status: "active", endsAt: null })).toBe("Inativar");
+		expect(getPayableLifecycleState({ status: "cancelled", endsAt: null })).toBe("inactive");
+		expect(getPayableLifecycleLabel({ status: "cancelled", endsAt: null })).toBe("Inativa");
+		expect(getPayableLifecycleActionLabel({ status: "cancelled", endsAt: null })).toBe("Ativar");
+		expect(
+			getPayableLifecycleState({ status: "active", endsAt: "2026-07-31" }, "2026-08-01"),
+		).toBe("expired");
+		expect(
+			getPayableLifecycleLabel({ status: "active", endsAt: "2026-07-31" }, "2026-08-01"),
+		).toBe("Contrato encerrado");
+		expect(
+			getPayableLifecycleActionLabel({ status: "active", endsAt: "2026-07-31" }, "2026-08-01"),
+		).toBe("Renovar");
 	});
 
 	it("PERIODICITY_PERIODS_SHOW_FRIENDLY_CONTRACT_RANGE", () => {

@@ -45,10 +45,6 @@ function getDateDay(value: string | Date): number {
 	return Number.parseInt(normalized.slice(8, 10), 10) || 1;
 }
 
-function minPeriod(a: string, b: string): string {
-	return a <= b ? a : b;
-}
-
 function toPeriodString(value: string | Date): string {
 	const normalized = toDateOnlyString(value);
 	return normalized ? normalized.slice(0, 7) : getCurrentPeriod();
@@ -107,18 +103,12 @@ export function buildPayableOccurrencePeriodRange(
 	referencePeriod: string = getCurrentPeriod(),
 	horizonMonths: number = PAYABLE_OCCURRENCE_HORIZON_MONTHS,
 ): string[] {
-	// For a rolling horizon, the start should be the reference period,
-	// not the template's startsAt. The template's startsAt is used to
-	// determine if the payable was already active, but the rolling horizon
-	// always starts from the reference period.
-	const startPeriod = referencePeriod;
-	const horizonEndPeriod = addMonthsToPeriod(
-		referencePeriod,
-		horizonMonths - 1,
-	);
+	const startPeriod = template.endsAt
+		? toPeriodString(template.startsAt)
+		: referencePeriod;
 	const endPeriod = template.endsAt
-		? minPeriod(toPeriodString(template.endsAt), horizonEndPeriod)
-		: horizonEndPeriod;
+		? toPeriodString(template.endsAt)
+		: addMonthsToPeriod(referencePeriod, horizonMonths - 1);
 
 	if (template.recurrenceType === "once") {
 		return [startPeriod];

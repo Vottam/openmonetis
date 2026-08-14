@@ -25,7 +25,8 @@ import {
 	updatePayableAction,
 	updatePayableOccurrenceAction,
 } from "./actions";
-import { fetchPayablesPageData } from "./queries";
+import { ensurePayableOccurrenceHorizon, fetchPayablesPageData } from "./queries";
+import { buildPayableOccurrencePeriodRange } from "./lib/horizon";
 import { computeMonthlySummary } from "./lib/monthly-read-model";
 import { seedPayablesTestData } from "./lib/test-support";
 
@@ -48,101 +49,214 @@ describe("ações de payables", () => {
 		await db.delete(user);
 	});
 
-	it("cria, atualiza, cancela e remove um payable", async () => {
+	it("materializa o contrato inteiro quando endsAt existe", async () => {
 		const localSeed = await seedPayablesTestData();
 		const created = await createPayableAction({
-			description: "Aluguel",
+			description: "Aluguel Apartamento",
 			supplierName: "Imobiliária",
 			categoryId: localSeed.categoryId,
 			recurrenceType: "monthly_fixed",
-			defaultAmount: 1500,
+			defaultAmount: 2500,
+			startsAt: "2026-08-10",
+			endsAt: "2029-08-10",
+		});
+		assertSuccess(created);
+
+		const occurrences = await db.query.accountsPayableOccurrences.findMany({
+			columns: { period: true },
+			where: (table, { eq }) => eq(table.payableId, created.data.payableId),
+		});
+		const expectedPeriods = buildPayableOccurrencePeriodRange(
+			{
+				recurrenceType: "monthly_fixed",
+				startsAt: "2026-08-10",
+				endsAt: "2029-08-10",
+			},
+			"2026-08",
+		);
+
+		expect(occurrences.map((item) => item.period).sort()).toEqual(expectedPeriods);
+		expect(occurrences.length).toBe(expectedPeriods.length);
+		expect(expectedPeriods[0]).toBe("2026-08");
+		expect(expectedPeriods.at(-1)).toBe("2029-08");
+	});
+
+
+	it("reconcilia o horizonte ao adicionar e estender endsAt", async () => {
+		const localSeed = await seedPayablesTestData();
+		const created = await createPayableAction({
+			description: "Contrato flexível",
+			supplierName: "Locador",
+			categoryId: localSeed.categoryId,
+			recurrenceType: "monthly_fixed",
+			defaultAmount: 2500,
 			startsAt: "2026-08-10",
 			endsAt: null,
 		});
 		assertSuccess(created);
-		const updated = await updatePayableAction({
+
+		const initialOccurrences = await db.query.accountsPayableOccurrences.findMany({
+			columns: { period: true },
+			where: (table, { eq }) => eq(table.payableId, created.data.payableId),
+		});
+		expect(initialOccurrences).toHaveLength(6);
+
+		const firstUpdate = await updatePayableAction({
 			id: created.data.payableId,
-			description: "Aluguel ajustado",
-			supplierName: "Imobiliária",
+			description: "Contrato flexível",
+			supplierName: "Locador",
 			categoryId: localSeed.categoryId,
 			recurrenceType: "monthly_fixed",
-			defaultAmount: 1500,
+			defaultAmount: 2500,
 			startsAt: "2026-08-10",
-			endsAt: null,
+			endsAt: "2027-08-10",
 		});
-		expect(updated.success).toBe(true);
-		const cancelled = await cancelPayableAction({ id: created.data.payableId });
-		expect(cancelled.success).toBe(true);
-		const removed = await deletePayableAction({ id: created.data.payableId });
-		expect(removed.success).toBe(true);
+		assertSuccess(firstUpdate);
+
+		const afterFirstUpdate = await db.query.accountsPayableOccurrences.findMany({
+			columns: { period: true },
+			where: (table, { eq }) => eq(table.payableId, created.data.payableId),
+		});
+		const firstExpectedPeriods = buildPayableOccurrencePeriodRange(
+			{
+				recurrenceType: "monthly_fixed",
+				startsAt: "2026-08-10",
+				endsAt: "2027-08-10",
+			},
+			"2026-08",
+		);
+		expect(afterFirstUpdate.map((item) => item.period).sort()).toEqual(firstExpectedPeriods);
+
+		const extensionUpdate = await updatePayableAction({
+			id: created.data.payableId,
+			description: "Contrato flexível",
+			supplierName: "Locador",
+			categoryId: localSeed.categoryId,
+			recurrenceType: "monthly_fixed",
+			defaultAmount: 2500,
+			startsAt: "2026-08-10",
+			endsAt: "2029-08-10",
+		});
+		assertSuccess(extensionUpdate);
+
+		const afterExtension = await db.query.accountsPayableOccurrences.findMany({
+			columns: { period: true },
+			where: (table, { eq }) => eq(table.payableId, created.data.payableId),
+		});
+		const extendedExpectedPeriods = buildPayableOccurrencePeriodRange(
+			{
+				recurrenceType: "monthly_fixed",
+				startsAt: "2026-08-10",
+				endsAt: "2029-08-10",
+			},
+			"2026-08",
+		);
+		expect(afterExtension.map((item) => item.period).sort()).toEqual(
+			extendedExpectedPeriods,
+		);
+		expect(new Set(afterExtension.map((item) => item.period)).size).toBe(afterExtension.length);
+
+		const idempotentUpdate = await updatePayableAction({
+			id: created.data.payableId,
+			description: "Contrato flexível",
+			supplierName: "Locador",
+			categoryId: localSeed.categoryId,
+			recurrenceType: "monthly_fixed",
+			defaultAmount: 2500,
+			startsAt: "2026-08-10",
+			endsAt: "2029-08-10",
+		});
+		assertSuccess(idempotentUpdate);
+
+		const afterIdempotentUpdate = await db.query.accountsPayableOccurrences.findMany({
+			columns: { period: true },
+			where: (table, { eq }) => eq(table.payableId, created.data.payableId),
+		});
+		expect(afterIdempotentUpdate.map((item) => item.period).sort()).toEqual(
+			extendedExpectedPeriods,
+		);
 	});
 
-	it("edita uma única occurrence sem alterar o template nem as demais competências", async () => {
+	it("desativa e reativa sem apagar histórico nem duplicar ocorrências", async () => {
 		const localSeed = await seedPayablesTestData();
-		const payable = await createPayableAction({
-			description: "Internet",
-			supplierName: "Provedor",
+		const created = await createPayableAction({
+			description: "Água",
+			supplierName: "Saneamento",
 			categoryId: localSeed.categoryId,
 			recurrenceType: "monthly_fixed",
-			defaultAmount: 100,
+			defaultAmount: 80,
 			startsAt: "2026-08-10",
 			endsAt: null,
 		});
-		assertSuccess(payable);
+		assertSuccess(created);
 
-		const occurrences = await db.query.accountsPayableOccurrences.findMany({
-			columns: {
-				id: true,
-				period: true,
-				dueDate: true,
-				expectedAmount: true,
-				actualAmount: true,
-				status: true,
-			},
-			where: (table, { eq }) => eq(table.payableId, payable.data.payableId),
+		const beforeOccurrences = await db.query.accountsPayableOccurrences.findMany({
+			columns: { id: true },
+			where: (table, { eq }) => eq(table.payableId, created.data.payableId),
 		});
-		occurrences.sort((left, right) => left.period.localeCompare(right.period));
-		expect(occurrences.length).toBeGreaterThanOrEqual(2);
+		expect(beforeOccurrences.length).toBeGreaterThan(0);
 
-		const target = occurrences[0];
-		const nextOccurrence = occurrences[1];
-		expect(target).toBeTruthy();
-		expect(nextOccurrence).toBeTruthy();
-
-		const result = await updatePayableOccurrenceAction({
-			occurrenceId: target.id,
-			dueDate: "2026-08-20",
-			actualAmount: 110.37,
+		const payment = await createPayablePaymentAction({
+			occurrenceId: beforeOccurrences[0]?.id ?? "",
+			amount: 80,
+			paymentMethod: "Pix",
+			accountId: localSeed.accountId,
+			cardId: null,
+			paidAt: "2026-08-12",
+			idempotencyKey: randomUUID(),
 		});
-		assertSuccess(result);
+		assertSuccess(payment);
 
-		const refreshedTarget = await db.query.accountsPayableOccurrences.findFirst({
-			columns: {
-				period: true,
-				dueDate: true,
-				expectedAmount: true,
-				actualAmount: true,
-				status: true,
-			},
-			where: (table, { eq }) => eq(table.id, target.id),
-		});
-		const refreshedNext = await db.query.accountsPayableOccurrences.findFirst({
-			columns: {
-				period: true,
-				dueDate: true,
-				expectedAmount: true,
-				actualAmount: true,
-				status: true,
-			},
-			where: (table, { eq }) => eq(table.id, nextOccurrence.id),
+		const paymentsBefore = await db.query.accountsPayablePayments.findMany({
+			columns: { id: true },
+			where: (table, { eq }) => eq(table.occurrenceId, beforeOccurrences[0]?.id ?? ""),
 		});
 
-		expect(Number(refreshedTarget?.expectedAmount ?? 0)).toBe(100);
-		expect(Number(refreshedTarget?.actualAmount ?? 0)).toBeCloseTo(110.37, 2);
-		expect(refreshedTarget?.dueDate).toBe("2026-08-20");
-		expect(Number(refreshedNext?.expectedAmount ?? 0)).toBe(100);
-		expect(refreshedNext?.actualAmount).toBeNull();
-		expect(refreshedNext?.dueDate).toBe(nextOccurrence.dueDate);
+		const deactivated = await cancelPayableAction({ id: created.data.payableId });
+		expect(deactivated.success).toBe(true);
+
+		const templateAfterDeactivate = await db.query.accountsPayable.findFirst({
+			columns: { status: true, deactivatedAt: true },
+			where: (table, { eq }) => eq(table.id, created.data.payableId),
+		});
+		expect(templateAfterDeactivate?.status).toBe("cancelled");
+		expect(templateAfterDeactivate?.deactivatedAt).not.toBeNull();
+
+		const afterDeactivateOccurrences = await db.query.accountsPayableOccurrences.findMany({
+			columns: { id: true },
+			where: (table, { eq }) => eq(table.payableId, created.data.payableId),
+		});
+		expect(afterDeactivateOccurrences.map((item) => item.id).sort()).toEqual(
+			beforeOccurrences.map((item) => item.id).sort(),
+		);
+
+		expect(await ensurePayableOccurrenceHorizon(localSeed.userId)).toBe(0);
+
+		const reactivated = await cancelPayableAction({ id: created.data.payableId });
+		expect(reactivated.success).toBe(true);
+
+		const templateAfterActivate = await db.query.accountsPayable.findFirst({
+			columns: { status: true, deactivatedAt: true },
+			where: (table, { eq }) => eq(table.id, created.data.payableId),
+		});
+		expect(templateAfterActivate?.status).toBe("active");
+		expect(templateAfterActivate?.deactivatedAt).toBe(templateAfterDeactivate?.deactivatedAt);
+
+		expect(await ensurePayableOccurrenceHorizon(localSeed.userId)).toBe(0);
+
+		const afterActivateOccurrences = await db.query.accountsPayableOccurrences.findMany({
+			columns: { id: true },
+			where: (table, { eq }) => eq(table.payableId, created.data.payableId),
+		});
+		expect(afterActivateOccurrences.map((item) => item.id).sort()).toEqual(
+			beforeOccurrences.map((item) => item.id).sort(),
+		);
+
+		const paymentsAfter = await db.query.accountsPayablePayments.findMany({
+			columns: { id: true },
+			where: (table, { eq }) => eq(table.occurrenceId, beforeOccurrences[0]?.id ?? ""),
+		});
+		expect(paymentsAfter.length).toBe(paymentsBefore.length);
 	});
 
 	it("bloqueia queda do valor abaixo do que já foi pago e preserva a transação", async () => {

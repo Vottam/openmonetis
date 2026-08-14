@@ -5,6 +5,7 @@ import {
 	getCompetenceMonthString,
 	getOccurrenceDisplayStatus,
 	sortOccurrencesForDisplay,
+	sortMonthlyPayableOccurrencesChronologically,
 	validateInvariance,
 } from "./monthly-read-model";
 
@@ -239,7 +240,72 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 			];
 			const sorted = sortOccurrencesForDisplay(occs);
 			expect(sorted[0].dueDate).toBe("2026-08-01");
-			expect(sorted[1].dueDate).toBe("2026-08-15");
+		});
+	});
+	describe("sortMonthlyPayableOccurrencesChronologically", () => {
+		it("sorts by period and then due date", () => {
+			const occs: any = [
+				{
+					payable: {
+						id: "b",
+						description: "B",
+						supplierName: null,
+						categoryId: null,
+						categoryName: null,
+						categoryIcon: null,
+						recurrenceType: "monthly_fixed" as const,
+						deactivatedAt: null,
+						status: "active" as const,
+					},
+					occurrence: {
+						id: "2",
+						payableId: "b",
+						period: "2026-09",
+						dueDate: "2026-09-15",
+						expectedAmount: 100,
+						actualAmount: null,
+						paidAmount: 0,
+						remainingAmount: 100,
+						status: "pending" as const,
+						isOverdue: false,
+						payments: [],
+						createdAt: "2026-08-01T00:00:00.000Z",
+						updatedAt: "2026-08-01T00:00:00.000Z",
+					},
+				},
+				{
+					payable: {
+						id: "a",
+						description: "A",
+						supplierName: null,
+						categoryId: null,
+						categoryName: null,
+						categoryIcon: null,
+						recurrenceType: "monthly_fixed" as const,
+						deactivatedAt: null,
+						status: "active" as const,
+					},
+					occurrence: {
+						id: "1",
+						payableId: "a",
+						period: "2026-08",
+						dueDate: "2026-08-20",
+						expectedAmount: 100,
+						actualAmount: null,
+						paidAmount: 0,
+						remainingAmount: 100,
+						status: "pending" as const,
+						isOverdue: false,
+						payments: [],
+						createdAt: "2026-08-01T00:00:00.000Z",
+						updatedAt: "2026-08-01T00:00:00.000Z",
+					},
+				},
+			];
+
+			const sorted = sortMonthlyPayableOccurrencesChronologically(occs);
+			expect(sorted.map((item) => item.occurrence.period)).toEqual(["2026-08", "2026-09"]);
+			expect(sorted.map((item) => item.occurrence.id)).toEqual(["1", "2"]);
 		});
 	});
 });

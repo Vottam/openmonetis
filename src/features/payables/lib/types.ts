@@ -84,6 +84,7 @@ export type Payable = {
 	dueDay: number | null;
 	startsAt: string;
 	endsAt: string | null;
+	deactivatedAt: string | null;
 	status: PayableStatus;
 	createdAt: string;
 	updatedAt: string;

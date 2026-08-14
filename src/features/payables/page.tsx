@@ -3,6 +3,7 @@
 import {
 	RiAddLine,
 	RiArrowLeftSLine,
+	RiArrowRightLine,
 	RiCalendarEventLine,
 	RiCloseLine,
 	RiDeleteBin5Line,
@@ -25,6 +26,8 @@ import {
 	buildUpcomingMonthlyPayableOccurrences,
 	computeMonthlySummary,
 	sortMonthlyPayableOccurrences,
+	sortMonthlyPayableOccurrencesChronologically,
+	isOccurrenceVisibleForPayable,
 } from "@/features/payables/lib/monthly-read-model";
 import { useMonthlyPeriod } from "@/features/payables/lib/use-monthly-period";
 import {
@@ -33,6 +36,9 @@ import {
 	buildPayableOccurrenceDetailFields,
 	buildPayableTemplateFields,
 	formatPayableRecurrenceLabel,
+	getPayableLifecycleActionLabel,
+	getPayableLifecycleLabel,
+	getPayableLifecycleState,
 	PAYABLE_RECURRENCE_OPTIONS,
 } from "@/features/payables/lib/page-ux";
 import { PAYMENT_METHODS } from "@/features/transactions/lib/constants";
@@ -89,11 +95,6 @@ const DATE_FORMAT: Intl.DateTimeFormatOptions = {
 	day: "2-digit",
 	month: "2-digit",
 	year: "numeric",
-};
-
-const PAYABLE_STATUS_LABELS: Record<Payable["status"], string> = {
-	active: "Ativa",
-	cancelled: "Inativa",
 };
 
 const OCCURRENCE_STATUS_LABELS: Record<PayableOccurrence["status"], string> = {
@@ -578,9 +579,16 @@ function PayableDetailDialog({
 		return null;
 	}
 
-	const openOccurrences = payable.occurrences.filter(
-		(occurrence) => occurrence.status !== "cancelled",
-	);
+	const openOccurrences = payable.occurrences
+		.filter((occurrence) =>
+			isOccurrenceVisibleForPayable(payable.payable, occurrence),
+		)
+		.filter((occurrence) => occurrence.status !== "cancelled")
+		.sort((left, right) =>
+			left.period.localeCompare(right.period) ||
+			left.dueDate.localeCompare(right.dueDate),
+		);
+	const lifecycleState = getPayableLifecycleState(payable.payable);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -601,7 +609,7 @@ function PayableDetailDialog({
 							<CardTitle className="text-base">Resumo do template</CardTitle>
 							<CardDescription>
 								{formatPayableRecurrenceLabel(payable.payable.recurrenceType)} ·{" "}
-								{PAYABLE_STATUS_LABELS[payable.payable.status]}
+								{getPayableLifecycleLabel(payable.payable)}
 							</CardDescription>
 						</CardHeader>
 						<CardContent className="space-y-2 text-sm">
@@ -698,10 +706,17 @@ function PayableDetailDialog({
 							<RiPencilLine className="size-4" />
 							Editar
 						</Button>
-						<Button type="button" variant="outline" onClick={() => onCancel(payable)}>
-							<RiCloseLine className="size-4" />
-							Inativar
-						</Button>
+						{lifecycleState === "expired" ? (
+							<Button type="button" variant="outline" onClick={() => onEdit(payable)}>
+								<RiArrowRightLine className="size-4" />
+								Renovar
+							</Button>
+						) : (
+							<Button type="button" variant="outline" onClick={() => onCancel(payable)}>
+								<RiCloseLine className="size-4" />
+								{getPayableLifecycleActionLabel(payable.payable)}
+							</Button>
+						)}
 					</div>
 					<Button type="button" variant="destructive" onClick={() => onDelete(payable)}>
 						<RiDeleteBin5Line className="size-4" />
@@ -1350,12 +1365,9 @@ export function PayablesPage({
 		: "Sem próximas obrigações";
 
 	if (mode === "history" && historyPayable) {
-		const historyOccurrenceItems = historyPayable.occurrences
-			.filter((occurrence) => occurrence.status !== "cancelled")
-			.map((occurrence) => ({
-				payable: historyPayable.payable,
-				occurrence,
-			}));
+		const historyOccurrenceItems = sortMonthlyPayableOccurrencesChronologically(
+			buildHistoricalPayableOccurrences([historyPayable]),
+		);
 		const historySummaryOnly = computeMonthlySummary(
 			historyOccurrenceItems.map((item) => item.occurrence),
 		);
@@ -1467,8 +1479,8 @@ export function PayablesPage({
 					}
 					description={
 						cancelTarget?.payable.status === "cancelled"
-							? "A conta a pagar será reativada e as ocorrências serão recalculadas conforme seus pagamentos e vencimentos."
-							: "A conta a pagar será inativada e as ocorrências abertas também serão marcadas como canceladas."
+							? "A conta a pagar será reativada e o horizonte será recomposto sem duplicar ocorrências já existentes."
+							: "A conta a pagar será inativada sem apagar histórico, pagamentos ou ocorrências já materializadas."
 					}
 					confirmLabel={cancelTarget?.payable.status === "cancelled" ? "Ativar" : "Inativar"}
 					pendingLabel={cancelTarget?.payable.status === "cancelled" ? "Ativando..." : "Inativando..."}
@@ -1599,8 +1611,8 @@ export function PayablesPage({
 				}
 				description={
 					cancelTarget?.payable.status === "cancelled"
-						? "A conta a pagar será reativada e as ocorrências serão recalculadas conforme seus pagamentos e vencimentos."
-						: "A conta a pagar será inativada e as ocorrências abertas também serão marcadas como canceladas."
+						? "A conta a pagar será reativada e o horizonte será recomposto sem duplicar ocorrências já existentes."
+						: "A conta a pagar será inativada sem apagar histórico, pagamentos ou ocorrências já materializadas."
 				}
 				confirmLabel={cancelTarget?.payable.status === "cancelled" ? "Ativar" : "Inativar"}
 				pendingLabel={cancelTarget?.payable.status === "cancelled" ? "Ativando..." : "Inativando..."}

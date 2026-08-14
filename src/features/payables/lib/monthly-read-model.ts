@@ -31,6 +31,7 @@ export type MonthlyPayableOccurrence = {
 		categoryName: string | null;
 		categoryIcon: string | null;
 		recurrenceType: PayableRecurrenceType;
+		deactivatedAt: string | null;
 		status: PayableStatus;
 	};
 	occurrence: {
@@ -112,6 +113,42 @@ function getOpenBalanceAmount(occurrence: OccurrenceLike): number {
 				: 0;
 
 	return Math.max(dueAmount, 0);
+}
+
+function toPeriodString(value: string | null | undefined): string | null {
+	return value ? value.slice(0, 7) : null;
+}
+
+export function getVisibleUntilPeriod(
+	payable: Pick<PayableWithOccurrences["payable"], "deactivatedAt" | "endsAt" | "status">,
+): string | null {
+	const candidates: string[] = [];
+	const endsAtPeriod = toPeriodString(payable.endsAt);
+	if (endsAtPeriod) {
+		candidates.push(endsAtPeriod);
+	}
+	const deactivatedPeriod =
+		payable.status === "cancelled" ? toPeriodString(payable.deactivatedAt) : null;
+	if (deactivatedPeriod) {
+		candidates.push(deactivatedPeriod);
+	}
+	if (!candidates.length) {
+		return null;
+	}
+
+	return candidates.reduce((left, right) => (comparePeriods(left, right) <= 0 ? left : right));
+}
+
+export function isOccurrenceVisibleForPayable(
+	payable: Pick<PayableWithOccurrences["payable"], "deactivatedAt" | "endsAt" | "status">,
+	occurrence: Pick<OccurrenceLike, "period">,
+): boolean {
+	const untilPeriod = getVisibleUntilPeriod(payable);
+	if (!untilPeriod || !occurrence.period) {
+		return true;
+	}
+
+	return comparePeriods(occurrence.period, untilPeriod) <= 0;
 }
 
 export function isValidPeriod(
@@ -286,6 +323,24 @@ export function sortMonthlyPayableOccurrences(
 	});
 }
 
+export function sortMonthlyPayableOccurrencesChronologically(
+	occurrences: readonly MonthlyPayableOccurrence[],
+): MonthlyPayableOccurrence[] {
+	return [...occurrences].sort((left, right) => {
+		const periodOrder = comparePeriods(left.occurrence.period, right.occurrence.period);
+		if (periodOrder !== 0) {
+			return periodOrder;
+		}
+
+		const dueDateOrder = left.occurrence.dueDate.localeCompare(right.occurrence.dueDate);
+		if (dueDateOrder !== 0) {
+			return dueDateOrder;
+		}
+
+		return left.occurrence.createdAt.localeCompare(right.occurrence.createdAt);
+	});
+}
+
 export function buildMonthlyPayableOccurrences(
 	payables: readonly PayableWithOccurrences[],
 	period: string,
@@ -293,6 +348,7 @@ export function buildMonthlyPayableOccurrences(
 	return payables.flatMap((entry) =>
 		entry.occurrences
 			.filter((occurrence) => occurrence.period === period)
+			.filter((occurrence) => isOccurrenceVisibleForPayable(entry.payable, occurrence))
 			.map((occurrence) => ({
 				payable: {
 					id: entry.payable.id,
@@ -303,6 +359,7 @@ export function buildMonthlyPayableOccurrences(
 					categoryIcon: entry.payable.categoryIcon,
 					recurrenceType: entry.payable.recurrenceType,
 					status: entry.payable.status,
+					deactivatedAt: entry.payable.deactivatedAt,
 				},
 				occurrence: {
 					id: occurrence.id,
@@ -336,6 +393,7 @@ export function buildUpcomingMonthlyPayableOccurrences(
 
 				return comparePeriods(occurrence.period, period) > 0;
 			})
+			.filter((occurrence) => isOccurrenceVisibleForPayable(entry.payable, occurrence))
 			.filter(
 				(occurrence) =>
 					occurrence.status !== "paid" && occurrence.status !== "cancelled",
@@ -350,6 +408,7 @@ export function buildUpcomingMonthlyPayableOccurrences(
 					categoryIcon: entry.payable.categoryIcon,
 					recurrenceType: entry.payable.recurrenceType,
 					status: entry.payable.status,
+					deactivatedAt: entry.payable.deactivatedAt,
 				},
 				occurrence: {
 					id: occurrence.id,
@@ -453,6 +512,7 @@ export function buildOperationalMonthlyPayableOccurrences(
 
 	return payables.flatMap((entry) =>
 		entry.occurrences
+			.filter((occurrence) => isOccurrenceVisibleForPayable(entry.payable, occurrence))
 			.filter((occurrence) => isVisibleInOperationalWindow(occurrence, bounds))
 			.map((occurrence) =>
 				toDetailedOccurrence({ payable: entry.payable }, occurrence),
@@ -465,6 +525,7 @@ export function buildHistoricalPayableOccurrences(
 ): MonthlyPayableOccurrence[] {
 	return payables.flatMap((entry) =>
 		entry.occurrences
+			.filter((occurrence) => isOccurrenceVisibleForPayable(entry.payable, occurrence))
 			.filter((occurrence) => occurrence.status !== "cancelled")
 			.map((occurrence) =>
 				toDetailedOccurrence({ payable: entry.payable }, occurrence),

@@ -14,6 +14,9 @@ import {
 	isPayableOccurrenceOverdue,
 } from "./lib/horizon";
 import {
+	isOccurrenceVisibleForPayable,
+} from "./lib/monthly-read-model";
+import {
 	derivePayableOccurrenceStatus,
 	getPayableRemainingAmount,
 	sumPayablePaymentAmounts,
@@ -53,6 +56,7 @@ function mapPayable(row: {
 	dueDay: number | null;
 	startsAt: string;
 	endsAt: string | null;
+	deactivatedAt: string | null;
 	status: string;
 	createdAt: Date;
 	updatedAt: Date;
@@ -71,6 +75,7 @@ function mapPayable(row: {
 		dueDay: row.dueDay,
 		startsAt: row.startsAt,
 		endsAt: row.endsAt,
+		deactivatedAt: row.deactivatedAt,
 		status: row.status === "cancelled" ? "cancelled" : "active",
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
@@ -340,6 +345,8 @@ export async function fetchPayableCalendarEvents(
 			defaultAmount: accountsPayable.defaultAmount,
 			dueDay: accountsPayable.dueDay,
 			startsAt: accountsPayable.startsAt,
+			endsAt: accountsPayable.endsAt,
+			deactivatedAt: accountsPayable.deactivatedAt,
 			status: accountsPayable.status,
 			period: accountsPayableOccurrences.period,
 			dueDate: accountsPayableOccurrences.dueDate,
@@ -362,7 +369,18 @@ export async function fetchPayableCalendarEvents(
 		)
 		.orderBy(asc(accountsPayableOccurrences.dueDate));
 
-	return rows.map((row) => ({
+	return rows
+		.filter((row) =>
+			isOccurrenceVisibleForPayable(
+				{
+					status: row.status as PayableStatus,
+					endsAt: row.endsAt,
+					deactivatedAt: row.deactivatedAt,
+				},
+				{ period: row.period },
+			),
+		)
+		.map((row) => ({
 		id: row.occurrenceId,
 		type: "payable" as const,
 		date: row.dueDate,
@@ -392,7 +410,11 @@ export async function fetchPayableCalendarEvents(
 export function buildPayablesSummary(
 	payables: PayableWithOccurrences[],
 ): PayablesSummary {
-	const occurrences = payables.flatMap((item) => item.occurrences);
+	const occurrences = payables.flatMap((item) =>
+		item.occurrences.filter((occurrence) =>
+			isOccurrenceVisibleForPayable(item.payable, occurrence),
+		),
+	);
 	const openOccurrences = occurrences.filter(
 		(occurrence) =>
 			occurrence.status !== "cancelled" && occurrence.status !== "paid",
