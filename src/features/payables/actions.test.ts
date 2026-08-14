@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
 
 import {
 	accountsPayableOccurrences,
@@ -20,8 +21,11 @@ import {
 	createPayableAction,
 	createPayablePaymentAction,
 	deletePayableAction,
+	informOccurrenceAmountAction,
 	updatePayableAction,
 } from "./actions";
+import { fetchPayablesPageData } from "./queries";
+import { computeMonthlySummary } from "./lib/monthly-read-model";
 import { seedPayablesTestData } from "./lib/test-support";
 
 function assertSuccess<T>(result: {
@@ -113,6 +117,41 @@ describe("ações de payables", () => {
 		expect(duplicate.data.transactionId).toBe(result.data.transactionId);
 	});
 
+	it("bloqueia pagamento acima do saldo restante", async () => {
+		const localSeed = await seedPayablesTestData();
+		const payable = await createPayableAction({
+			description: "Conta overpayment",
+			supplierName: "Fornecedor overpayment",
+			categoryId: localSeed.categoryId,
+			recurrenceType: "monthly_fixed",
+			defaultAmount: 100,
+			startsAt: "2026-08-10",
+			endsAt: null,
+		});
+		assertSuccess(payable);
+
+		const occurrence = await db.query.accountsPayableOccurrences.findFirst({
+			columns: { id: true, expectedAmount: true, actualAmount: true, status: true },
+			where: (table, { eq }) => eq(table.payableId, payable.data.payableId),
+		});
+		expect(occurrence).toBeTruthy();
+		if (!occurrence) throw new Error("Occurrence not found");
+
+		const overpayment = await createPayablePaymentAction({
+			occurrenceId: occurrence.id,
+			amount: 101,
+			paymentMethod: "Pix",
+			accountId: localSeed.accountId,
+			cardId: null,
+			paidAt: "2026-08-12",
+			idempotencyKey: randomUUID(),
+		});
+
+		expect(overpayment.success).toBe(false);
+		if (overpayment.success) throw new Error("Expected overpayment to fail");
+		expect(overpayment.error).toBe("Valor maior que o saldo restante.");
+	});
+
 	it("faz pagamento parcial em duas etapas, fecha a ocorrência e debita a conta bancária", async () => {
 		const localSeed = await seedPayablesTestData();
 		const payable = await createPayableAction({
@@ -173,10 +212,11 @@ describe("ações de payables", () => {
 			(sum, payment) => sum + Number(payment.amount),
 			0,
 		);
-		expect(Number(afterFirst?.actualAmount ?? 0)).toBe(40);
+		expect(Number(afterFirst?.actualAmount ?? 0)).toBe(100);
 		expect(Number(afterFirst?.expectedAmount ?? 0)).toBe(100);
 		expect(firstPaid).toBe(40);
 		expect(afterFirst?.status).toBe("partial");
+		expect(Number(afterFirst?.actualAmount ?? 0) - firstPaid).toBe(60);
 		expect(Number(afterFirst?.expectedAmount ?? 0) - firstPaid).toBe(60);
 
 		const bankAfterFirst = await db.query.transactions.findMany({
@@ -379,5 +419,145 @@ describe("ações de payables", () => {
 		expect(tx?.cardId).toBe(localSeed.cardId);
 		expect(tx?.accountId).toBeNull();
 		expect(tx?.note?.startsWith("AUTO_CONTA_A_PAGAR:")).toBe(true);
+	});
+
+	it("monthly_variable COM defaultAmount: estimated -> real value -> payment (full flow)", async () => {
+		const localSeed = await seedPayablesTestData();
+
+		// STEP 1: Create monthly_variable WITH defaultAmount (estimated 150.00)
+		const createResult = await createPayableAction({
+			description: "TEST: Energia com estimativa 150",
+			supplierName: "Energia Teste",
+			categoryId: localSeed.categoryId,
+			recurrenceType: "monthly_variable",
+			defaultAmount: 150.00,
+			startsAt: "2026-08-15",
+			endsAt: null,
+		});
+		assertSuccess(createResult);
+		const payableId = createResult.data.payableId;
+
+		// Get the occurrence
+		const occBefore = await db.query.accountsPayableOccurrences.findFirst({
+			columns: { id: true, expectedAmount: true, actualAmount: true, status: true, paidAmount: true },
+			where: (table, { eq }) => eq(table.payableId, payableId),
+		});
+		expect(occBefore).toBeTruthy();
+		if (!occBefore) throw new Error("Occurrence not found");
+
+		// Verify INITIAL state: expectedAmount=150, actualAmount=null, status=pending
+		expect(Number(occBefore?.expectedAmount ?? 0)).toBe(150);
+		expect(occBefore?.actualAmount).toBeNull();
+		expect(occBefore?.status).toBe("pending");
+
+		// STEP 2: Update estimated value to REAL amount (163.42)
+		const updateResult = await informOccurrenceAmountAction({
+			occurrenceId: occBefore.id,
+			amount: 163.42,
+		});
+		assertSuccess(updateResult);
+
+		// Verify PERSISTED state after informOccurrenceAmountAction
+		const occAfterUpdate = await db.query.accountsPayableOccurrences.findFirst({
+			columns: { id: true, expectedAmount: true, actualAmount: true, status: true },
+			where: (table, { eq }) => eq(table.id, occBefore.id),
+		});
+		expect(occAfterUpdate).toBeTruthy();
+
+		// FIXED: informOccurrenceAmountAction now writes real value to actualAmount, preserves expectedAmount
+		expect(Number(occAfterUpdate?.expectedAmount ?? 0)).toBe(150.00); // expectedAmount preserved (original estimate)
+		expect(Number(occAfterUpdate?.actualAmount ?? 0)).toBe(163.42); // actualAmount set to real value
+		expect(occAfterUpdate?.status).toBe("pending");
+
+		// STEP 3: Verify read model (monthly-read-model) uses real value
+		const pageData = await fetchPayablesPageData(localSeed.userId);
+		const testPayable = pageData.payables.find(p => p.payable.id === payableId);
+		const occReadModel = testPayable?.occurrences[0];
+
+		expect(occReadModel).toBeTruthy();
+		expect(occReadModel?.expectedAmount).toBe(150.00);
+		expect(occReadModel?.actualAmount).toBe(163.42);
+		expect(occReadModel?.remainingAmount).toBe(163.42); // dueAmount = actualAmount when present
+
+		// Summary from monthly-read-model includes ALL horizon occurrences
+		// Current period: actualAmount=163.42, 5 future periods: expectedAmount=150 each = 750
+		// Total: 163.42 + 750 = 913.42
+		const monthlySummary = computeMonthlySummary(testPayable!.occurrences);
+		expect(monthlySummary.totalKnown).toBe(913.42);
+		expect(monthlySummary.remaining).toBe(913.42);
+		expect(monthlySummary.paid).toBe(0);
+
+		// STEP 4: Make REAL payment of 163.42 via B1 flow
+		const paymentResult = await createPayablePaymentAction({
+			occurrenceId: occAfterUpdate!.id,
+			amount: 163.42,
+			paymentMethod: "Pix",
+			accountId: localSeed.accountId,
+			cardId: null,
+			paidAt: "2026-08-12",
+			idempotencyKey: randomUUID(),
+		});
+		assertSuccess(paymentResult);
+
+		// STEP 5: Verify PERSISTED state after payment
+				const occAfterPayment = await db.query.accountsPayableOccurrences.findFirst({
+					columns: { id: true, expectedAmount: true, actualAmount: true, status: true },
+					with: { payments: { columns: { amount: true } } },
+					where: (table, { eq }) => eq(table.id, occBefore.id),
+				});
+				expect(occAfterPayment).toBeTruthy();
+				expect(Number(occAfterPayment?.expectedAmount ?? 0)).toBe(150.00);
+				expect(Number(occAfterPayment?.actualAmount ?? 0)).toBe(163.42); // actualAmount PRESERVED (real value confirmed)
+				expect(occAfterPayment?.status).toBe("paid");
+
+				// paidAmount is derived from payments
+				const paidAmountAfter = (occAfterPayment?.payments ?? []).reduce(
+					(sum, p) => sum + Number(p.amount ?? 0), 0
+				);
+				expect(paidAmountAfter).toBe(163.42);
+
+				// STEP 6: Verify read model after payment
+				const pageDataAfterPayment = await fetchPayablesPageData(localSeed.userId);
+				const testPayableAfter = pageDataAfterPayment.payables.find(p => p.payable.id === payableId);
+				const occAfterPaymentRM = testPayableAfter?.occurrences[0];
+
+				expect(occAfterPaymentRM).toBeTruthy();
+				expect(occAfterPaymentRM?.expectedAmount).toBe(150.00);
+				expect(occAfterPaymentRM?.actualAmount).toBe(163.42);
+				expect(occAfterPaymentRM?.paidAmount).toBe(163.42);
+				expect(occAfterPaymentRM?.remainingAmount).toBe(0); // actualAmount - paidAmount = 0
+				expect(occAfterPaymentRM?.status).toBe("paid");
+
+		// Use monthly-read-model summary for verification
+		const monthlySummaryAfter = computeMonthlySummary(testPayableAfter!.occurrences);
+		// After payment: current period paid 163.42, 5 future periods still 150 each = 750
+		// totalKnown = 163.42 + 750 = 913.42
+		// paid = 163.42
+		// remaining = 750 (only future periods)
+		expect(monthlySummaryAfter.paid).toBe(163.42);
+		expect(monthlySummaryAfter.remaining).toBe(750);
+		expect(monthlySummaryAfter.totalKnown).toBe(913.42);
+		expect(monthlySummaryAfter.totalKnown).toBe(
+			monthlySummaryAfter.paid + monthlySummaryAfter.remaining
+		);
+
+		// STEP 7: Verify transaction was created correctly
+		const tx = await db.query.transactions.findFirst({
+			where: (table, { eq }) => eq(table.id, paymentResult.data.transactionId),
+		});
+		expect(tx).toBeTruthy();
+		expect(tx?.amount).toBe("-163.42"); // Expense is negative
+		expect(tx?.name).toContain("Pagamento");
+		expect(tx?.paymentMethod).toBe("Pix");
+		expect(tx?.note).toContain("AUTO_CONTA_A_PAGAR:");
+
+		// STEP 8: Verify payable payment record
+		const pp = await db.query.accountsPayablePayments.findFirst({
+			where: (table, { eq }) => eq(table.id, paymentResult.data.paymentId),
+		});
+		expect(pp).toBeTruthy();
+		expect(pp?.amount).toBe("163.42");
+		expect(pp?.transactionId).toBe(paymentResult.data.transactionId);
+		expect(pp?.occurrenceId).toBe(occBefore!.id);
 	});
 });

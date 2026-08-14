@@ -151,10 +151,12 @@ function mapOccurrence(row: {
 	const actualAmount = toNumber(row.actualAmount);
 	const remainingAmount = getPayableRemainingAmount({
 		expectedAmount,
+		actualAmount,
 		paidAmount,
 	});
 	const derivedStatus = derivePayableOccurrenceStatus({
 		expectedAmount,
+		actualAmount,
 		paidAmount,
 		currentStatus: status,
 	});

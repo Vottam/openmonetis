@@ -163,13 +163,13 @@ function formatOccurrenceTitle(
 
 	if (occurrence.status === "awaiting_amount") {
 		if (isEstimated) {
-			return formatMoneyValue(occurrence.expectedAmount) + " (Estimado)";
+			return `${formatMoneyValue(occurrence.expectedAmount)} (Estimado)`;
 		}
 		return "Aguardando valor";
 	}
 
 	if (isEstimated) {
-		return formatMoneyValue(occurrence.expectedAmount) + " (Estimado)";
+		return `${formatMoneyValue(occurrence.expectedAmount)} (Estimado)`;
 	}
 
 	if (occurrence.expectedAmount !== null) {

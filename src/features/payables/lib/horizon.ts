@@ -176,7 +176,8 @@ export function buildPayableOccurrenceSeeds({
 					period,
 					dueDate,
 					expectedAmount,
-					actualAmount: null,
+					actualAmount:
+						template.recurrenceType === "monthly_variable" ? null : expectedAmount,
 					status: baseStatus,
 				},
 			];

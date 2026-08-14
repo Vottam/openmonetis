@@ -18,10 +18,12 @@ export function sumPayablePaymentAmounts(
 
 export function derivePayableOccurrenceStatus({
 	expectedAmount,
+	actualAmount,
 	paidAmount,
 	currentStatus,
 }: {
 	expectedAmount: number | null;
+	actualAmount: number | null;
 	paidAmount: number;
 	currentStatus: PayableOccurrenceStatus;
 }): PayableOccurrenceStatus {
@@ -29,18 +31,20 @@ export function derivePayableOccurrenceStatus({
 		return currentStatus;
 	}
 
-	if (expectedAmount === null) {
+	const dueAmount =
+		actualAmount !== null ? actualAmount : expectedAmount;
+	if (dueAmount === null) {
 		return currentStatus;
 	}
 
-	const expectedCents = toCents(expectedAmount);
+	const dueCents = toCents(dueAmount);
 	const paidCents = toCents(paidAmount);
 
 	if (paidCents <= 0) {
 		return currentStatus === "awaiting_amount" ? "awaiting_amount" : "pending";
 	}
 
-	if (paidCents < expectedCents) {
+	if (paidCents < dueCents) {
 		return "partial";
 	}
 
@@ -49,15 +53,20 @@ export function derivePayableOccurrenceStatus({
 
 export function getPayableRemainingAmount({
 	expectedAmount,
+	actualAmount,
 	paidAmount,
 }: {
 	expectedAmount: number | null;
+	actualAmount: number | null;
 	paidAmount: number;
 }): number | null {
-	if (expectedAmount === null) {
+	// Valor devido: actualAmount (confirmado) ?? expectedAmount (estimado)
+	const dueAmount =
+		actualAmount !== null ? actualAmount : expectedAmount;
+	if (dueAmount === null) {
 		return null;
 	}
 
-	const remainingCents = toCents(expectedAmount) - toCents(paidAmount);
+	const remainingCents = toCents(dueAmount) - toCents(paidAmount);
 	return Math.max(remainingCents, 0) / 100;
 }

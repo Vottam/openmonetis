@@ -94,6 +94,8 @@ function getOpenBalanceAmount(occurrence: OccurrenceLike): number {
 		return 0;
 	}
 
+	// Valor devido: actualAmount (confirmado) ?? expectedAmount (estimado) ?? 0
+	// Se há remainingAmount calculado (venha de query), usar ele
 	if (
 		occurrence.remainingAmount !== null &&
 		occurrence.remainingAmount !== undefined
@@ -101,14 +103,15 @@ function getOpenBalanceAmount(occurrence: OccurrenceLike): number {
 		return Math.max(occurrence.remainingAmount, 0);
 	}
 
-	if (
-		occurrence.expectedAmount !== null &&
-		occurrence.expectedAmount !== undefined
-	) {
-		return Math.max(occurrence.expectedAmount, 0);
-	}
+	// Caso contrário, derivar do valor real confirmado ou estimado
+	const dueAmount =
+		occurrence.actualAmount !== null && occurrence.actualAmount !== undefined
+			? occurrence.actualAmount
+			: occurrence.expectedAmount !== null && occurrence.expectedAmount !== undefined
+				? occurrence.expectedAmount
+				: 0;
 
-	return 0;
+	return Math.max(dueAmount, 0);
 }
 
 export function isValidPeriod(
@@ -155,24 +158,27 @@ export function computeMonthlySummary(
 			continue;
 		}
 
-		// Incluir expectedAmount no totalKnown mesmo se status for awaiting_amount
-		// Isso permite que valores estimados participem de projeções/orçamento
-		if (
-			occurrence.expectedAmount !== null &&
-			occurrence.expectedAmount !== undefined
-		) {
-			totalKnown += occurrence.expectedAmount;
+		// Valor conhecido para projeção: actualAmount (confirmado) ?? expectedAmount (estimado)
+		const knownAmount =
+			occurrence.actualAmount !== null && occurrence.actualAmount !== undefined
+				? occurrence.actualAmount
+				: occurrence.expectedAmount !== null && occurrence.expectedAmount !== undefined
+					? occurrence.expectedAmount
+					: 0;
+
+		if (knownAmount > 0) {
+			totalKnown += knownAmount;
 		}
 
 		if (occurrence.status === "paid" || occurrence.status === "partial") {
 			paid += occurrence.paidAmount ?? 0;
 		}
 
-		// Contar como awaitingAmount apenas se realmente não tem expectedAmount
+		// Contar como awaitingAmount apenas se realmente não tem expectedAmount E não tem actualAmount
 		if (
 			occurrence.status === "awaiting_amount" &&
-			(occurrence.expectedAmount === null ||
-				occurrence.expectedAmount === undefined)
+			(occurrence.expectedAmount === null || occurrence.expectedAmount === undefined) &&
+			(occurrence.actualAmount === null || occurrence.actualAmount === undefined)
 		) {
 			awaitingAmountCount += 1;
 			continue;

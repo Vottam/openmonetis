@@ -359,6 +359,7 @@ export async function informOccurrenceAmountAction(
 				occurrenceId: accountsPayableOccurrences.id,
 				status: accountsPayableOccurrences.status,
 				expectedAmount: accountsPayableOccurrences.expectedAmount,
+				actualAmount: accountsPayableOccurrences.actualAmount,
 				payableId: accountsPayable.id,
 			})
 			.from(accountsPayableOccurrences)
@@ -384,23 +385,25 @@ export async function informOccurrenceAmountAction(
 		const isEstimatedMonthlyVariable =
 			current.payableId &&
 			current.status === "pending" &&
-			current.expectedAmount !== null;
+			current.expectedAmount !== null &&
+			current.actualAmount === null;
 
 		if (current.status !== "awaiting_amount" && !isEstimatedMonthlyVariable) {
-			return { success: false, error: "Esta ocorrência já possui valor." };
+			return { success: false, error: "Esta ocorrência já possui valor real confirmado." };
 		}
 
 		await db
 			.update(accountsPayableOccurrences)
 			.set({
-				expectedAmount: formatDecimalForDbRequired(data.amount),
+				// expectedAmount permanece inalterado (preserva estimativa original)
+				actualAmount: formatDecimalForDbRequired(data.amount),
 				status: "pending",
 				updatedAt: new Date(),
 			})
 			.where(eq(accountsPayableOccurrences.id, data.occurrenceId));
 
 		revalidateForEntity("payables", user.id);
-		return { success: true, message: "Valor informado com sucesso." };
+		return { success: true, message: "Valor real informado com sucesso." };
 	} catch (error) {
 		return handleActionError(error);
 	}
@@ -449,15 +452,18 @@ export async function createPayablePaymentAction(
 			const amount = Number(payment.amount ?? 0);
 			return Number.isFinite(amount) ? sum + amount : sum;
 		}, 0);
-		const expectedAmount =
-			occurrence.expectedAmount === null
-				? null
-				: Number(occurrence.expectedAmount);
+
+		// Valor devido conceitualmente: actualAmount (confirmado) ?? expectedAmount (estimado)
+		const dueAmount = occurrence.actualAmount !== null
+			? Number(occurrence.actualAmount)
+			: occurrence.expectedAmount !== null
+				? Number(occurrence.expectedAmount)
+				: null;
 		const paymentAmount = Number(data.amount);
 		const remainingAmount =
-			expectedAmount === null
+			dueAmount === null
 				? null
-				: Math.max(expectedAmount - paidAmountSoFar, 0);
+				: Math.max(dueAmount - paidAmountSoFar, 0);
 
 		if (data.paymentMethod === "Cartão de crédito") {
 			if (!data.cardId) {
@@ -510,8 +516,8 @@ export async function createPayablePaymentAction(
 
 		if (
 			occurrence.status === "awaiting_amount" ||
-			expectedAmount === null ||
-			!Number.isFinite(expectedAmount)
+			dueAmount === null ||
+			!Number.isFinite(dueAmount)
 		) {
 			return {
 				success: false,
@@ -610,8 +616,12 @@ export async function createPayablePaymentAction(
 			await tx
 				.update(accountsPayableOccurrences)
 				.set({
-					actualAmount: formatDecimalForDbRequired(nextPaidAmount),
-					status: nextPaidAmount + 0.005 >= expectedAmount ? "paid" : "partial",
+					// actualAmount NÃO é mais sobrescrito — preserva valor real confirmado
+					// status baseado no dueAmount (valor real confirmado ou estimativa)
+					status:
+						dueAmount !== null && nextPaidAmount + 0.005 >= dueAmount
+							? "paid"
+							: "partial",
 					updatedAt: new Date(),
 				})
 				.where(eq(accountsPayableOccurrences.id, occurrence.id));
