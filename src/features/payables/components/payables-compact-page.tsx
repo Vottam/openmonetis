@@ -25,6 +25,8 @@ import {
 	getDisplayedOccurrenceAmount,
 	getOccurrenceActionVisibility,
 	isEstimatedOccurrence,
+	formatPayableRecurrenceLabel,
+	formatPayableTemplatePeriod,
 } from "@/features/payables/lib/page-ux";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
@@ -570,7 +572,16 @@ export function PayablesCompactPage({
 												? formatCurrency(item.payable.defaultAmount)
 												: "—"}
 										</TableCell>
-										<TableCell>{item.payable.recurrenceType}</TableCell>
+										<TableCell>
+						<div className="space-y-1">
+							<div className="font-medium">
+								{formatPayableRecurrenceLabel(item.payable.recurrenceType)}
+							</div>
+							<div className="text-xs text-muted-foreground">
+								{formatPayableTemplatePeriod(item.payable)}
+							</div>
+						</div>
+					</TableCell>
 										<TableCell>
 											{formatFinancialDateLabel(
 												item.payable.startsAt,

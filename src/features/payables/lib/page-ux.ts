@@ -1,5 +1,5 @@
 import type { MonthlyPayableOccurrence } from "@/features/payables/lib/monthly-read-model";
-import type { PayableOccurrence, PayableWithOccurrences } from "./types";
+import type { PayableOccurrence, PayableRecurrenceType, PayableWithOccurrences } from "./types";
 
 export type OccurrenceActionVisibility = {
 	showHistory: boolean;
@@ -46,6 +46,77 @@ function formatDateOnly(value: string | null | undefined): string {
 	}
 
 	return `${day}/${month}/${year}`;
+}
+
+export const PAYABLE_RECURRENCE_LABELS: Record<PayableRecurrenceType, string> = {
+	once: "Única",
+	monthly_fixed: "Mensal fixa",
+	monthly_variable: "Mensal variável",
+};
+
+export const PAYABLE_RECURRENCE_OPTIONS = Object.entries(
+	PAYABLE_RECURRENCE_LABELS,
+) as Array<[PayableRecurrenceType, string]>;
+
+export function formatPayableRecurrenceLabel(
+	recurrenceType: PayableRecurrenceType,
+): string {
+	return PAYABLE_RECURRENCE_LABELS[recurrenceType];
+}
+
+function formatMonthYear(value: string | null | undefined): string {
+	if (!value) {
+		return "—";
+	}
+
+	const [year, month] = value.slice(0, 10).split("-");
+	if (!year || !month) {
+		return value;
+	}
+
+	return `${month}/${year}`;
+}
+
+export function formatPayableTemplatePeriod(
+	payable: Pick<PayableWithOccurrences["payable"], "recurrenceType" | "startsAt" | "endsAt">,
+): string {
+	if (payable.recurrenceType === "once") {
+		return `Em ${formatDateOnly(payable.startsAt)}`;
+	}
+
+	const startsAt = formatMonthYear(payable.startsAt);
+	if (payable.endsAt) {
+		return `${startsAt} a ${formatMonthYear(payable.endsAt)}`;
+	}
+
+	return `${startsAt} · sem data final`;
+}
+
+export function buildPayableTemplateFields(
+	payable: Pick<
+		PayableWithOccurrences["payable"],
+		"categoryName" | "defaultAmount" | "endsAt" | "recurrenceType" | "startsAt"
+	>,
+) {
+	return [
+		{
+			label: "Periodicidade",
+			value: formatPayableRecurrenceLabel(payable.recurrenceType),
+		},
+		{
+			label: "Período",
+			value: formatPayableTemplatePeriod(payable),
+		},
+		{
+			label: "Valor padrão",
+			value: formatMoney(payable.defaultAmount),
+		},
+		{
+			label: "Primeiro vencimento",
+			value: formatDateOnly(payable.startsAt),
+		},
+		{ label: "Categoria", value: payable.categoryName ?? "—" },
+	] satisfies PayableOccurrenceDetailField[];
 }
 
 export function isEstimatedOccurrence(

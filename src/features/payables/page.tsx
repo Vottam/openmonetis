@@ -31,6 +31,9 @@ import {
 	buildInformAmountInputValue,
 	buildPayableHistoryHref,
 	buildPayableOccurrenceDetailFields,
+	buildPayableTemplateFields,
+	formatPayableRecurrenceLabel,
+	PAYABLE_RECURRENCE_OPTIONS,
 } from "@/features/payables/lib/page-ux";
 import { PAYMENT_METHODS } from "@/features/transactions/lib/constants";
 import { ConfirmActionDialog } from "@/shared/components/confirm-action-dialog";
@@ -86,12 +89,6 @@ const DATE_FORMAT: Intl.DateTimeFormatOptions = {
 	day: "2-digit",
 	month: "2-digit",
 	year: "numeric",
-};
-
-const RECURRENCE_LABELS: Record<PayableRecurrenceType, string> = {
-	once: "Única",
-	monthly_fixed: "Mensal fixa",
-	monthly_variable: "Mensal variável",
 };
 
 const PAYABLE_STATUS_LABELS: Record<Payable["status"], string> = {
@@ -454,7 +451,7 @@ function PayableFormDialog({
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>
-								{Object.entries(RECURRENCE_LABELS).map(([value, label]) => (
+								{PAYABLE_RECURRENCE_OPTIONS.map(([value, label]) => (
 									<SelectItem key={value} value={value}>
 										{label}
 									</SelectItem>
@@ -603,29 +600,19 @@ function PayableDetailDialog({
 						<CardHeader className="pb-3">
 							<CardTitle className="text-base">Resumo do template</CardTitle>
 							<CardDescription>
-								{RECURRENCE_LABELS[payable.payable.recurrenceType]} ·{" "}
+								{formatPayableRecurrenceLabel(payable.payable.recurrenceType)} ·{" "}
 								{PAYABLE_STATUS_LABELS[payable.payable.status]}
 							</CardDescription>
 						</CardHeader>
 						<CardContent className="space-y-2 text-sm">
-							<div className="flex items-center justify-between gap-3">
-								<span className="text-muted-foreground">Valor padrão</span>
-								<span className="font-medium">
-									{payable.payable.defaultAmount !== null
-										? formatMoneyValue(payable.payable.defaultAmount)
-										: "—"}
-								</span>
-							</div>
-							<div className="flex items-center justify-between gap-3">
-								<span className="text-muted-foreground">Primeiro vencimento</span>
-								<span className="font-medium">{formatDateOnly(payable.payable.startsAt)}</span>
-							</div>
-							<div className="flex items-center justify-between gap-3">
-								<span className="text-muted-foreground">Categoria</span>
-								<span className="font-medium">{payable.payable.categoryName ?? "—"}</span>
-							</div>
-					</CardContent>
-				</Card>
+							{buildPayableTemplateFields(payable.payable).map((field) => (
+								<div key={field.label} className="flex items-center justify-between gap-3">
+									<span className="text-muted-foreground">{field.label}</span>
+									<span className="font-medium">{field.value}</span>
+								</div>
+							))}
+						</CardContent>
+					</Card>
 
 					<Card>
 						<CardHeader className="pb-3">

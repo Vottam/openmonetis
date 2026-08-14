@@ -4,6 +4,9 @@ import {
 	buildInformAmountInputValue,
 	buildPayableHistoryHref,
 	buildPayableOccurrenceDetailFields,
+	buildPayableTemplateFields,
+	formatPayableRecurrenceLabel,
+	formatPayableTemplatePeriod,
 	getDisplayedOccurrenceAmount,
 	getOccurrenceActionVisibility,
 	isEstimatedOccurrence,
@@ -20,6 +23,8 @@ const baseItem = {
 		categoryIcon: "home",
 		recurrenceType: "monthly_variable",
 		status: "active",
+		startsAt: "2026-08-01",
+		endsAt: "2027-07-31",
 	},
 	occurrence: {
 		id: "occ-1",
@@ -36,6 +41,51 @@ const baseItem = {
 } as const;
 
 describe("page-ux", () => {
+	it("PERIODICITY_LABELS_ARE_HUMAN_READABLE", () => {
+		expect(formatPayableRecurrenceLabel("once")).toBe("Única");
+		expect(formatPayableRecurrenceLabel("monthly_fixed")).toBe("Mensal fixa");
+		expect(formatPayableRecurrenceLabel("monthly_variable")).toBe("Mensal variável");
+	});
+
+	it("PERIODICITY_PERIODS_SHOW_FRIENDLY_CONTRACT_RANGE", () => {
+		expect(
+			formatPayableTemplatePeriod({
+				recurrenceType: "monthly_fixed",
+				startsAt: "2026-08-01",
+				endsAt: "2027-07-31",
+			}),
+		).toBe("08/2026 a 07/2027");
+		expect(
+			formatPayableTemplatePeriod({
+				recurrenceType: "monthly_variable",
+				startsAt: "2026-08-01",
+				endsAt: null,
+			}),
+		).toBe("08/2026 · sem data final");
+		expect(
+			formatPayableTemplatePeriod({
+				recurrenceType: "once",
+				startsAt: "2026-08-14",
+				endsAt: null,
+			}),
+		).toBe("Em 14/08/2026");
+	});
+
+	it("TEMPLATE_FIELDS_INCLUDE_PERIODICITY_AND_PERIOD", () => {
+		const fields = buildPayableTemplateFields(baseItem.payable as never);
+		expect(fields.map((field) => field.label)).toEqual(
+			expect.arrayContaining([
+				"Periodicidade",
+				"Período",
+				"Valor padrão",
+				"Primeiro vencimento",
+				"Categoria",
+			]),
+		);
+		expect(fields.find((field) => field.label === "Periodicidade")?.value).toBe("Mensal variável");
+		expect(fields.find((field) => field.label === "Período")?.value).toBe("08/2026 a 07/2027");
+	});
+
 	it("UPDATE_VALUE_TRIGGER_WORKS", () => {
 		expect(
 			getOccurrenceActionVisibility(baseItem as never, "operational").showInformAmount,
