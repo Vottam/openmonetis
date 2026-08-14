@@ -7,6 +7,7 @@ import {
 	RiCloseLine,
 	RiDeleteBin5Line,
 	RiPencilLine,
+	RiToggleLine,
 } from "@remixicon/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
@@ -27,7 +28,7 @@ import {
 } from "@/features/payables/lib/monthly-read-model";
 import { useMonthlyPeriod } from "@/features/payables/lib/use-monthly-period";
 import {
-	buildInformAmountInitialValue,
+	buildInformAmountInputValue,
 	buildPayableHistoryHref,
 	buildPayableOccurrenceDetailFields,
 } from "@/features/payables/lib/page-ux";
@@ -60,7 +61,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/shared/components/ui/select";
-import { normalizeDecimalInput } from "@/shared/utils/currency";
+import { normalizeDecimalInput, parseMoneyInput } from "@/shared/utils/currency";
 import { formatFinancialDateLabel } from "@/shared/utils/financial-dates";
 import { cn } from "@/shared/utils/ui";
 import {
@@ -70,6 +71,7 @@ import {
 	deletePayableAction,
 	informOccurrenceAmountAction,
 	updatePayableAction,
+	updatePayableOccurrenceAction,
 } from "./actions";
 import type {
 	Payable,
@@ -94,7 +96,7 @@ const RECURRENCE_LABELS: Record<PayableRecurrenceType, string> = {
 
 const PAYABLE_STATUS_LABELS: Record<Payable["status"], string> = {
 	active: "Ativa",
-	cancelled: "Cancelada",
+	cancelled: "Inativa",
 };
 
 const OCCURRENCE_STATUS_LABELS: Record<PayableOccurrence["status"], string> = {
@@ -103,7 +105,7 @@ const OCCURRENCE_STATUS_LABELS: Record<PayableOccurrence["status"], string> = {
 	pending: "Pendente",
 	partial: "Parcial",
 	paid: "Paga",
-	cancelled: "Cancelada",
+	cancelled: "Inativa",
 };
 
 const BADGE_VARIANT: Record<
@@ -201,6 +203,19 @@ function buildPaymentFormState(
 		cardId: data.cardOptions[0]?.value ?? "",
 		paidAt: data.today,
 		idempotencyKey: globalThis.crypto.randomUUID(),
+	};
+}
+
+function buildOccurrenceEditFormState(occurrence: PayableOccurrence | null) {
+	const amount =
+		occurrence?.actualAmount ?? occurrence?.expectedAmount ?? occurrence?.remainingAmount ?? null;
+	return {
+		dueDate: occurrence?.dueDate ?? "",
+		actualAmount: amount === null ? "" : buildInformAmountInputValue({
+			expectedAmount: occurrence?.expectedAmount ?? null,
+			actualAmount: amount,
+			remainingAmount: occurrence?.remainingAmount ?? null,
+		}),
 	};
 }
 
@@ -933,15 +948,14 @@ function InformAmountDialog({
 
 	useEffect(() => {
 		if (visible && occurrence) {
-			setValue(buildInformAmountInitialValue(occurrence));
+			setValue(buildInformAmountInputValue(occurrence));
 			setErrorMessage(null);
 		}
 	}, [visible, occurrence]);
 
 	const submit = async () => {
-		const normalized = normalizeDecimalInput(value);
-		const amount = normalized ? Number(normalized) : NaN;
-		if (!Number.isFinite(amount) || amount <= 0) {
+		const amount = parseMoneyInput(value);
+		if (!Number.isFinite(amount ?? Number.NaN) || (amount ?? 0) <= 0) {
 			setErrorMessage("Informe um valor válido.");
 			return;
 		}
@@ -1023,6 +1037,142 @@ function InformAmountDialog({
 	);
 }
 
+function OccurrenceEditDialog({
+	open,
+	occurrence,
+	payable,
+	onOpenChange,
+	onSaved,
+}: {
+	open: boolean;
+	occurrence: PayableOccurrence | null;
+	payable: PayableWithOccurrences | null;
+	onOpenChange: (open: boolean) => void;
+	onSaved: () => void;
+}) {
+	const [form, setForm] = useState<ReturnType<typeof buildOccurrenceEditFormState>>(
+		() => buildOccurrenceEditFormState(occurrence),
+	);
+	const [isPending, startTransition] = useTransition();
+	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+	const visible = open && !!occurrence && !!payable;
+	const amountLocked = occurrence?.status === "paid";
+
+	useEffect(() => {
+		if (visible && occurrence) {
+			setForm(buildOccurrenceEditFormState(occurrence));
+			setErrorMessage(null);
+		}
+	}, [visible, occurrence]);
+
+	const submit = async () => {
+		if (!form.dueDate) {
+			setErrorMessage("Informe o vencimento.");
+			return;
+		}
+
+		const amount = parseMoneyInput(form.actualAmount);
+		if (!Number.isFinite(amount ?? Number.NaN) || (amount ?? 0) <= 0) {
+			setErrorMessage("Informe um valor válido.");
+			return;
+		}
+
+		startTransition(async () => {
+			const result = await updatePayableOccurrenceAction({
+				occurrenceId: occurrence?.id ?? "",
+				dueDate: form.dueDate,
+				actualAmount: amount,
+			});
+
+			if (!result.success) {
+				setErrorMessage(result.error);
+				toast.error(result.error);
+				return;
+			}
+
+			toast.success(result.message);
+			onSaved();
+			onOpenChange(false);
+		});
+	};
+
+	const detailFields = payable && occurrence
+		? buildPayableOccurrenceDetailFields({ payable: payable.payable, occurrence } as MonthlyPayableOccurrence)
+		: [];
+
+	return (
+		<Dialog open={visible} onOpenChange={onOpenChange}>
+			<DialogContent className="max-w-2xl">
+				<DialogHeader>
+					<DialogTitle>Editar competência</DialogTitle>
+					<DialogDescription>
+						{payable ? payable.payable.description : "Conta a pagar"} · {occurrence?.period}
+					</DialogDescription>
+				</DialogHeader>
+
+				<div className="grid gap-4">
+					<div className="grid gap-3 sm:grid-cols-2">
+						{detailFields.map((field) => (
+							<div key={field.label} className="rounded-lg border p-3 text-sm">
+								<div className="text-xs uppercase text-muted-foreground">{field.label}</div>
+								<div className="font-medium">{field.value}</div>
+							</div>
+						))}
+					</div>
+
+					<div className="grid gap-4 sm:grid-cols-2">
+						<div className="space-y-2">
+							<Label htmlFor="payable-edit-due-date">Vencimento</Label>
+							<Input
+								id="payable-edit-due-date"
+								type="date"
+								value={form.dueDate}
+								onChange={(event) =>
+									setForm((current) => ({
+										...current,
+										dueDate: event.target.value,
+									}))
+								}
+							/>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="payable-edit-amount">Valor real</Label>
+							<Input
+								id="payable-edit-amount"
+								value={form.actualAmount}
+								onChange={(event) =>
+									setForm((current) => ({
+										...current,
+										actualAmount: event.target.value,
+									}))
+								}
+								disabled={amountLocked}
+								placeholder="0,00"
+							/>
+							{amountLocked ? (
+								<p className="text-xs text-muted-foreground">
+									Valor financeiro travado porque a ocorrência já está paga.
+								</p>
+							) : null}
+						</div>
+					</div>
+				</div>
+
+				{errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
+
+				<DialogFooter>
+					<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+						Cancelar
+					</Button>
+					<Button type="button" onClick={() => void submit()} disabled={isPending}>
+						{isPending ? "Salvando..." : "Salvar"}
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
 export function PayablesPage({
 	data,
 	initialPayableId,
@@ -1047,7 +1197,6 @@ export function PayablesPage({
 		);
 		if (initialSelection) {
 			setSelectedPayable(initialSelection);
-			setDetailOpen(true);
 		}
 	}, [data.payables, initialPayableId]);
 
@@ -1086,6 +1235,10 @@ export function PayablesPage({
 		[operationalOccurrences],
 	);
 	const [detailOpen, setDetailOpen] = useState(false);
+	const [editTarget, setEditTarget] = useState<{
+		payable: PayableWithOccurrences | null;
+		occurrence: PayableOccurrence;
+	} | null>(null);
 	const [deleteTarget, setDeleteTarget] =
 		useState<PayableWithOccurrences | null>(null);
 	const [cancelTarget, setCancelTarget] =
@@ -1138,18 +1291,8 @@ export function PayablesPage({
 		router.push(buildPayableHistoryHref(payable.payable.id));
 	};
 
-	const openOccurrenceHistory = (item: MonthlyPayableOccurrence) => {
-		router.push(buildPayableHistoryHref(item.payable.id));
-	};
-
 	const openMonthlyDetail = (item: MonthlyPayableOccurrence) => {
-		const payable = findPayableById(item.payable.id);
-		if (!payable) {
-			toast.error("Conta a pagar não encontrada.");
-			return;
-		}
-		setSelectedPayable(payable);
-		setDetailOpen(true);
+		router.push(buildPayableHistoryHref(item.payable.id));
 	};
 
 	const openMonthlyInform = (item: MonthlyPayableOccurrence) => {
@@ -1161,6 +1304,20 @@ export function PayablesPage({
 		setSelectedPayable(payable);
 		setDetailOpen(false);
 		setInformTarget({
+			payable,
+			occurrence: item.occurrence as PayableOccurrence,
+		});
+	};
+
+	const openMonthlyEdit = (item: MonthlyPayableOccurrence) => {
+		const payable = findPayableById(item.payable.id);
+		if (!payable) {
+			toast.error("Conta a pagar não encontrada.");
+			return;
+		}
+		setSelectedPayable(payable);
+		setDetailOpen(false);
+		setEditTarget({
 			payable,
 			occurrence: item.occurrence as PayableOccurrence,
 		});
@@ -1241,6 +1398,7 @@ export function PayablesPage({
 					payables={data.payables}
 					onOpenOccurrenceDetails={openMonthlyDetail}
 					onInformAmount={openMonthlyInform}
+					onEditOccurrence={openMonthlyEdit}
 					onPay={openMonthlyPay}
 					onOpenPayableDetails={openDetail}
 					onOpenPayableHistory={openHistory}
@@ -1282,12 +1440,12 @@ export function PayablesPage({
 				payables={data.payables}
 				onOpenOccurrenceDetails={openMonthlyDetail}
 				onInformAmount={openMonthlyInform}
+				onEditOccurrence={openMonthlyEdit}
 				onPay={openMonthlyPay}
 				onOpenPayableDetails={openDetail}
 				onEditPayable={openEdit}
 				onCancelPayable={(item) => setCancelTarget(item)}
 				onDeletePayable={(item) => setDeleteTarget(item)}
-				onOpenHistory={openOccurrenceHistory}
 				onOpenPayableHistory={openHistory}
 			/>
 
@@ -1325,6 +1483,13 @@ export function PayablesPage({
 				onOpenChange={(open) => !open && setInformTarget(null)}
 				onSaved={refresh}
 			/>
+			<OccurrenceEditDialog
+				open={Boolean(editTarget)}
+				occurrence={editTarget?.occurrence ?? null}
+				payable={editTarget?.payable ?? null}
+				onOpenChange={(open) => !open && setEditTarget(null)}
+				onSaved={refresh}
+			/>
 			<PayablePaymentDialog
 				open={Boolean(payTarget)}
 				occurrence={payTarget?.occurrence ?? null}
@@ -1356,13 +1521,17 @@ export function PayablesPage({
 				onOpenChange={(open) => !open && setCancelTarget(null)}
 				title={
 					cancelTarget
-						? `Inativar ${cancelTarget.payable.description}?`
+						? `${cancelTarget.payable.status === "cancelled" ? "Ativar" : "Inativar"} ${cancelTarget.payable.description}?`
 						: "Inativar conta a pagar?"
 				}
-				description="O template será inativado e as ocorrências abertas também serão marcadas como canceladas."
-				confirmLabel="Inativar"
-				pendingLabel="Inativando..."
-				confirmVariant="destructive"
+				description={
+					cancelTarget?.payable.status === "cancelled"
+						? "A conta a pagar será reativada e as ocorrências serão recalculadas conforme seus pagamentos e vencimentos."
+						: "A conta a pagar será inativada e as ocorrências abertas também serão marcadas como canceladas."
+				}
+				confirmLabel={cancelTarget?.payable.status === "cancelled" ? "Ativar" : "Inativar"}
+				pendingLabel={cancelTarget?.payable.status === "cancelled" ? "Ativando..." : "Inativando..."}
+				confirmVariant={cancelTarget?.payable.status === "cancelled" ? "default" : "destructive"}
 				onConfirm={async () => {
 					if (cancelTarget) {
 						await handleCancel(cancelTarget);

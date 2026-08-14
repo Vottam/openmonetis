@@ -3,10 +3,11 @@
 import {
 	RiArrowLeftSLine,
 	RiCalendarEventLine,
+	RiDeleteBin5Line,
 	RiEyeLine,
-	RiHistoryLine,
 	RiMoneyDollarCircleLine,
 	RiPencilLine,
+	RiToggleLine,
 } from "@remixicon/react";
 import { CategoryIcon } from "@/features/categories/components/category-icon";
 import { MonthlyPeriodSelector } from "@/features/payables/components/MonthlyPeriodSelector";
@@ -170,13 +171,13 @@ export function PayablesCompactPage({
 	payables,
 	onOpenOccurrenceDetails,
 	onInformAmount,
+	onEditOccurrence,
 	onPay,
 	onOpenPayableDetails,
 	onEditPayable,
 	onCancelPayable,
 	onDeletePayable,
 	onOpenPayableHistory,
-	onOpenHistory,
 }: {
 	view: "operational" | "history";
 	period: string;
@@ -188,13 +189,13 @@ export function PayablesCompactPage({
 	payables: PayableWithOccurrences[];
 	onOpenOccurrenceDetails: (item: MonthlyPayableOccurrence) => void;
 	onInformAmount: (item: MonthlyPayableOccurrence) => void;
+	onEditOccurrence: (item: MonthlyPayableOccurrence) => void;
 	onPay: (item: MonthlyPayableOccurrence) => void;
 	onOpenPayableDetails: (payable: PayableWithOccurrences) => void;
 	onEditPayable: (payable: PayableWithOccurrences) => void;
 	onCancelPayable: (payable: PayableWithOccurrences) => void;
 	onDeletePayable: (payable: PayableWithOccurrences) => void;
 	onOpenPayableHistory?: (payable: PayableWithOccurrences) => void;
-	onOpenHistory?: (payable: MonthlyPayableOccurrence) => void;
 }) {
 	const titleText =
 		headerTitle ??
@@ -357,11 +358,11 @@ export function PayablesCompactPage({
 										</TableCell>
 										<TableCell>
 											<div className="flex justify-end gap-1.5">
-												{actionVisibility.showHistory && onOpenHistory ? (
+												{actionVisibility.showDetails ? (
 													<IconActionButton
-														label="Ver histórico"
-														icon={RiHistoryLine}
-														onClick={() => onOpenHistory(item)}
+														label="Ver competências"
+														icon={RiEyeLine}
+														onClick={() => onOpenOccurrenceDetails(item)}
 													/>
 												) : null}
 												{actionVisibility.showInformAmount ? (
@@ -375,6 +376,11 @@ export function PayablesCompactPage({
 														onClick={() => onInformAmount(item)}
 													/>
 												) : null}
+												<IconActionButton
+													label="Editar esta competência"
+													icon={RiPencilLine}
+													onClick={() => onEditOccurrence(item)}
+												/>
 												{actionVisibility.showPay ? (
 													<IconActionButton
 														label={
@@ -464,11 +470,11 @@ export function PayablesCompactPage({
 										</div>
 									</div>
 									<div className="flex flex-wrap gap-2">
-										{actionVisibility.showHistory && onOpenHistory ? (
+										{actionVisibility.showDetails ? (
 											<IconActionButton
-												label="Ver histórico"
-												icon={RiHistoryLine}
-												onClick={() => onOpenHistory(item)}
+												label="Ver competências"
+												icon={RiEyeLine}
+												onClick={() => onOpenOccurrenceDetails(item)}
 											/>
 										) : null}
 										{actionVisibility.showInformAmount ? (
@@ -482,6 +488,11 @@ export function PayablesCompactPage({
 												onClick={() => onInformAmount(item)}
 											/>
 										) : null}
+										<IconActionButton
+											label="Editar esta competência"
+											icon={RiPencilLine}
+											onClick={() => onEditOccurrence(item)}
+										/>
 										{actionVisibility.showPay ? (
 											<IconActionButton
 												label={
@@ -589,31 +600,23 @@ export function PayablesCompactPage({
 														onClick={() => onOpenPayableHistory(item)}
 													/>
 												) : null}
-												<Button
-													type="button"
-													variant="outline"
-													size="sm"
+												<IconActionButton
+													label="Editar cadastro"
+													icon={RiPencilLine}
 													onClick={() => onEditPayable(item)}
-												>
-													<RiPencilLine className="size-4" />
-													Editar cadastro
-												</Button>
-												<Button
-													type="button"
-													variant="outline"
-													size="sm"
+												/>
+												<IconActionButton
+													label={item.payable.status === "active" ? "Inativar" : "Ativar"}
+													icon={RiToggleLine}
 													onClick={() => onCancelPayable(item)}
-												>
-													Cancelar
-												</Button>
-												<Button
-													type="button"
-													variant="destructive"
-													size="sm"
+													variant="outline"
+												/>
+												<IconActionButton
+													label="Excluir"
+													icon={RiDeleteBin5Line}
 													onClick={() => onDeletePayable(item)}
-												>
-													Excluir
-												</Button>
+													variant="destructive"
+												/>
 											</div>
 										</TableCell>
 									</TableRow>

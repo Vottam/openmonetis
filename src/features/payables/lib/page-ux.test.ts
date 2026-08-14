@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildInformAmountInitialValue,
+	buildInformAmountInputValue,
 	buildPayableHistoryHref,
 	buildPayableOccurrenceDetailFields,
 	getDisplayedOccurrenceAmount,
@@ -41,6 +42,7 @@ describe("page-ux", () => {
 		).toBe(true);
 		expect(isEstimatedOccurrence(baseItem.payable as never, baseItem.occurrence as never)).toBe(true);
 		expect(normalize(buildInformAmountInitialValue(baseItem.occurrence as never))).toBe("R$ 150,00");
+		expect(buildInformAmountInputValue(baseItem.occurrence as never)).toBe("150,00");
 	});
 
 	it("UPDATE_VALUE_DIALOG_OPENS", () => {

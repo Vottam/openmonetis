@@ -55,6 +55,26 @@ export function normalizeDecimalInput(value: string): string {
 	return value.replace(/\s/g, "").replace(",", ".");
 }
 
+export function parseMoneyInput(value: string): number | null {
+	const trimmed = value.trim();
+	if (!trimmed) {
+		return null;
+	}
+
+	const stripped = trimmed.replace(/[^\d,.-]/g, "");
+	if (!stripped) {
+		return null;
+	}
+
+	const sign = stripped.startsWith("-") ? -1 : 1;
+	const unsigned = stripped.replace(/^-/, "");
+	const normalized = unsigned.includes(",")
+		? unsigned.replace(/\./g, "").replace(",", ".")
+		: unsigned;
+	const parsed = Number(normalized) * sign;
+	return Number.isFinite(parsed) ? parsed : null;
+}
+
 /**
  * Formats a limit/balance input for display
  * @param value - The number to format

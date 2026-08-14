@@ -23,6 +23,7 @@ import {
 	deletePayableAction,
 	informOccurrenceAmountAction,
 	updatePayableAction,
+	updatePayableOccurrenceAction,
 } from "./actions";
 import { fetchPayablesPageData } from "./queries";
 import { computeMonthlySummary } from "./lib/monthly-read-model";
@@ -74,6 +75,145 @@ describe("ações de payables", () => {
 		expect(cancelled.success).toBe(true);
 		const removed = await deletePayableAction({ id: created.data.payableId });
 		expect(removed.success).toBe(true);
+	});
+
+	it("edita uma única occurrence sem alterar o template nem as demais competências", async () => {
+		const localSeed = await seedPayablesTestData();
+		const payable = await createPayableAction({
+			description: "Internet",
+			supplierName: "Provedor",
+			categoryId: localSeed.categoryId,
+			recurrenceType: "monthly_fixed",
+			defaultAmount: 100,
+			startsAt: "2026-08-10",
+			endsAt: null,
+		});
+		assertSuccess(payable);
+
+		const occurrences = await db.query.accountsPayableOccurrences.findMany({
+			columns: {
+				id: true,
+				period: true,
+				dueDate: true,
+				expectedAmount: true,
+				actualAmount: true,
+				status: true,
+			},
+			where: (table, { eq }) => eq(table.payableId, payable.data.payableId),
+		});
+		occurrences.sort((left, right) => left.period.localeCompare(right.period));
+		expect(occurrences.length).toBeGreaterThanOrEqual(2);
+
+		const target = occurrences[0];
+		const nextOccurrence = occurrences[1];
+		expect(target).toBeTruthy();
+		expect(nextOccurrence).toBeTruthy();
+
+		const result = await updatePayableOccurrenceAction({
+			occurrenceId: target.id,
+			dueDate: "2026-08-20",
+			actualAmount: 110.37,
+		});
+		assertSuccess(result);
+
+		const refreshedTarget = await db.query.accountsPayableOccurrences.findFirst({
+			columns: {
+				period: true,
+				dueDate: true,
+				expectedAmount: true,
+				actualAmount: true,
+				status: true,
+			},
+			where: (table, { eq }) => eq(table.id, target.id),
+		});
+		const refreshedNext = await db.query.accountsPayableOccurrences.findFirst({
+			columns: {
+				period: true,
+				dueDate: true,
+				expectedAmount: true,
+				actualAmount: true,
+				status: true,
+			},
+			where: (table, { eq }) => eq(table.id, nextOccurrence.id),
+		});
+
+		expect(Number(refreshedTarget?.expectedAmount ?? 0)).toBe(100);
+		expect(Number(refreshedTarget?.actualAmount ?? 0)).toBeCloseTo(110.37, 2);
+		expect(refreshedTarget?.dueDate).toBe("2026-08-20");
+		expect(Number(refreshedNext?.expectedAmount ?? 0)).toBe(100);
+		expect(refreshedNext?.actualAmount).toBeNull();
+		expect(refreshedNext?.dueDate).toBe(nextOccurrence.dueDate);
+	});
+
+	it("bloqueia queda do valor abaixo do que já foi pago e preserva a transação", async () => {
+		const localSeed = await seedPayablesTestData();
+		const payable = await createPayableAction({
+			description: "Conta parcial",
+			supplierName: "Fornecedor parcial",
+			categoryId: localSeed.categoryId,
+			recurrenceType: "monthly_fixed",
+			defaultAmount: 100,
+			startsAt: "2026-08-10",
+			endsAt: null,
+		});
+		assertSuccess(payable);
+
+		const occurrence = await db.query.accountsPayableOccurrences.findFirst({
+			columns: { id: true, dueDate: true, expectedAmount: true, actualAmount: true, status: true },
+			where: (table, { eq }) => eq(table.payableId, payable.data.payableId),
+		});
+		expect(occurrence).toBeTruthy();
+		if (!occurrence) throw new Error("Occurrence not found");
+
+		const payment = await createPayablePaymentAction({
+			occurrenceId: occurrence.id,
+			amount: 50,
+			paymentMethod: "Pix",
+			accountId: localSeed.accountId,
+			cardId: null,
+			paidAt: "2026-08-12",
+			idempotencyKey: randomUUID(),
+		});
+		assertSuccess(payment);
+
+		const blocked = await updatePayableOccurrenceAction({
+			occurrenceId: occurrence.id,
+			dueDate: occurrence.dueDate,
+			actualAmount: 40,
+		});
+		expect(blocked.success).toBe(false);
+		if (blocked.success) throw new Error("Expected blocked edit to fail");
+		expect(blocked.error).toBe("O novo valor não pode ser menor que o valor já pago.");
+
+		const refreshed = await db.query.accountsPayableOccurrences.findFirst({
+			columns: { actualAmount: true, status: true },
+			with: {
+				payments: { columns: { amount: true } },
+			},
+			where: (table, { eq }) => eq(table.id, occurrence.id),
+		});
+		expect(refreshed?.actualAmount).toBeNull();
+		expect((refreshed?.payments ?? []).reduce((sum, item) => sum + Number(item.amount), 0)).toBe(50);
+
+		const paid = await createPayablePaymentAction({
+			occurrenceId: occurrence.id,
+			amount: 50,
+			paymentMethod: "Pix",
+			accountId: localSeed.accountId,
+			cardId: null,
+			paidAt: "2026-08-12",
+			idempotencyKey: randomUUID(),
+		});
+		assertSuccess(paid);
+
+		const locked = await updatePayableOccurrenceAction({
+			occurrenceId: occurrence.id,
+			dueDate: occurrence.dueDate,
+			actualAmount: 120,
+		});
+		expect(locked.success).toBe(false);
+		if (locked.success) throw new Error("Expected locked edit to fail");
+		expect(locked.error).toBe("Não é possível alterar o valor financeiro de uma ocorrência paga.");
 	});
 
 	it("registra pagamento, atualiza ocorrência e respeita idempotência", async () => {
@@ -131,7 +271,7 @@ describe("ações de payables", () => {
 		assertSuccess(payable);
 
 		const occurrence = await db.query.accountsPayableOccurrences.findFirst({
-			columns: { id: true, expectedAmount: true, actualAmount: true, status: true },
+			columns: { id: true, dueDate: true, expectedAmount: true, actualAmount: true, status: true },
 			where: (table, { eq }) => eq(table.payableId, payable.data.payableId),
 		});
 		expect(occurrence).toBeTruthy();
@@ -212,11 +352,10 @@ describe("ações de payables", () => {
 			(sum, payment) => sum + Number(payment.amount),
 			0,
 		);
-		expect(Number(afterFirst?.actualAmount ?? 0)).toBe(100);
+		expect(afterFirst?.actualAmount).toBeNull();
 		expect(Number(afterFirst?.expectedAmount ?? 0)).toBe(100);
 		expect(firstPaid).toBe(40);
 		expect(afterFirst?.status).toBe("partial");
-		expect(Number(afterFirst?.actualAmount ?? 0) - firstPaid).toBe(60);
 		expect(Number(afterFirst?.expectedAmount ?? 0) - firstPaid).toBe(60);
 
 		const bankAfterFirst = await db.query.transactions.findMany({
@@ -270,7 +409,7 @@ describe("ações de payables", () => {
 			(sum, payment) => sum + Number(payment.amount),
 			0,
 		);
-		expect(Number(afterSecond?.actualAmount ?? 0)).toBe(100);
+		expect(afterSecond?.actualAmount).toBeNull();
 		expect(Number(afterSecond?.expectedAmount ?? 0)).toBe(100);
 		expect(secondPaid).toBe(100);
 		expect(afterSecond?.status).toBe("paid");

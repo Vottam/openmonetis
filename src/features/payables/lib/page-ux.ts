@@ -24,6 +24,17 @@ function formatMoney(value: number | null | undefined): string {
 	}).format(value);
 }
 
+function formatMoneyInput(value: number | null | undefined): string {
+	if (value === null || value === undefined) {
+		return "";
+	}
+
+	return new Intl.NumberFormat("pt-BR", {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+	}).format(value);
+}
+
 function formatDateOnly(value: string | null | undefined): string {
 	if (!value) {
 		return "—";
@@ -65,6 +76,17 @@ export function buildInformAmountInitialValue(
 	);
 }
 
+export function buildInformAmountInputValue(
+	occurrence: Pick<
+		PayableOccurrence,
+		"expectedAmount" | "actualAmount" | "remainingAmount"
+	>,
+): string {
+	return formatMoneyInput(
+		occurrence.actualAmount ?? occurrence.expectedAmount ?? occurrence.remainingAmount,
+	);
+}
+
 export function getOccurrenceActionVisibility(
 	item: MonthlyPayableOccurrence,
 	view: "operational" | "history",
@@ -72,11 +94,12 @@ export function getOccurrenceActionVisibility(
 	return {
 		showHistory: view === "operational",
 		showInformAmount:
-			item.occurrence.status === "awaiting_amount" ||
-			isEstimatedOccurrence(item.payable, item.occurrence),
+			view === "operational" &&
+			(item.occurrence.status === "awaiting_amount" ||
+				isEstimatedOccurrence(item.payable, item.occurrence)),
 		showPay:
 			item.occurrence.status === "pending" || item.occurrence.status === "partial",
-		showDetails: true,
+		showDetails: view === "operational",
 	};
 }
 
@@ -108,7 +131,7 @@ export function buildPayableOccurrenceDetailFields(
 							: occurrence.status === "scheduled"
 								? "Agendada"
 								: occurrence.status === "cancelled"
-									? "Cancelada"
+									? "Inativa"
 									: occurrence.isOverdue
 										? "Vencida"
 										: "Pendente",

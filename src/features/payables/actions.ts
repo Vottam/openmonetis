@@ -123,6 +123,12 @@ const informOccurrenceAmountSchema = z.object({
 	amount: z.number().finite().positive("Informe um valor válido."),
 });
 
+const updatePayableOccurrenceSchema = z.object({
+	occurrenceId: z.string().uuid("Informe a ocorrência."),
+	dueDate: dateOnlySchema,
+	actualAmount: z.number().finite().positive("Informe um valor válido."),
+});
+
 function getDueDay(value: string): number {
 	return Number.parseInt(value.slice(8, 10), 10);
 }
@@ -282,23 +288,81 @@ export async function cancelPayableAction(
 			return { success: false, error: "Conta a pagar não encontrada." };
 		}
 
-		await db
-			.update(accountsPayable)
-			.set({ status: "cancelled", updatedAt: new Date() })
-			.where(
-				and(
-					eq(accountsPayable.id, data.id),
-					eq(accountsPayable.userId, user.id),
-				),
-			);
+		const now = new Date();
+		const isCurrentlyCancelled = existing.status === "cancelled";
+		const occurrences = await db.query.accountsPayableOccurrences.findMany({
+			columns: {
+				id: true,
+				status: true,
+				dueDate: true,
+				expectedAmount: true,
+				actualAmount: true,
+			},
+			where: eq(accountsPayableOccurrences.payableId, data.id),
+			with: {
+				payments: { columns: { amount: true } },
+			},
+		});
 
-		await db
-			.update(accountsPayableOccurrences)
-			.set({ status: "cancelled", updatedAt: new Date() })
-			.where(eq(accountsPayableOccurrences.payableId, data.id));
+		await db.transaction(async (tx) => {
+			await tx
+				.update(accountsPayable)
+				.set({
+					status: isCurrentlyCancelled ? "active" : "cancelled",
+					updatedAt: now,
+				})
+				.where(
+					and(
+						eq(accountsPayable.id, data.id),
+						eq(accountsPayable.userId, user.id),
+					),
+				);
+
+			if (!isCurrentlyCancelled) {
+				await tx
+					.update(accountsPayableOccurrences)
+					.set({ status: "cancelled", updatedAt: now })
+					.where(eq(accountsPayableOccurrences.payableId, data.id));
+				return;
+			}
+
+			const businessDate = getBusinessDateString();
+			for (const occurrence of occurrences) {
+				const paidAmount = occurrence.payments.reduce((sum, payment) => {
+					const amount = Number(payment.amount ?? 0);
+					return Number.isFinite(amount) ? sum + amount : sum;
+				}, 0);
+				const dueAmount =
+					occurrence.actualAmount !== null
+						? Number(occurrence.actualAmount)
+						: occurrence.expectedAmount !== null
+							? Number(occurrence.expectedAmount)
+							: null;
+				let nextStatus: typeof occurrence.status;
+				if (paidAmount > 0 && dueAmount !== null) {
+					nextStatus = paidAmount + 0.005 >= dueAmount ? "paid" : "partial";
+				} else if (dueAmount === null) {
+					nextStatus = "awaiting_amount";
+				} else if (occurrence.dueDate > businessDate) {
+					nextStatus = "scheduled";
+				} else {
+					nextStatus = "pending";
+				}
+
+				await tx
+					.update(accountsPayableOccurrences)
+					.set({ status: nextStatus, updatedAt: now })
+					.where(eq(accountsPayableOccurrences.id, occurrence.id));
+			}
+		});
 
 		revalidateForEntity("payables", user.id);
-		return { success: true, message: "Conta a pagar cancelada com sucesso." };
+		return {
+			success: true,
+			message: isCurrentlyCancelled
+				? "Conta a pagar reativada com sucesso."
+				: "Conta a pagar inativada com sucesso.",
+		};
 	} catch (error) {
 		return handleActionError(error);
 	}
@@ -404,6 +468,87 @@ export async function informOccurrenceAmountAction(
 
 		revalidateForEntity("payables", user.id);
 		return { success: true, message: "Valor real informado com sucesso." };
+	} catch (error) {
+		return handleActionError(error);
+	}
+}
+
+export async function updatePayableOccurrenceAction(
+	input: unknown,
+): Promise<ActionResult> {
+	try {
+		const user = await getUser();
+		const data = updatePayableOccurrenceSchema.parse(input);
+		const occurrence = await db.query.accountsPayableOccurrences.findFirst({
+			columns: {
+				id: true,
+				status: true,
+				dueDate: true,
+				expectedAmount: true,
+				actualAmount: true,
+			},
+			where: eq(accountsPayableOccurrences.id, data.occurrenceId),
+			with: {
+				payable: {
+					columns: { userId: true },
+				},
+				payments: { columns: { amount: true } },
+			},
+		});
+
+		if (!occurrence || occurrence.payable.userId !== user.id) {
+			return { success: false, error: "Ocorrência não encontrada." };
+		}
+
+		const paidAmount = occurrence.payments.reduce((sum, payment) => {
+			const amount = Number(payment.amount ?? 0);
+			return Number.isFinite(amount) ? sum + amount : sum;
+		}, 0);
+		const currentDueAmount =
+			occurrence.actualAmount !== null
+				? Number(occurrence.actualAmount)
+				: occurrence.expectedAmount !== null
+					? Number(occurrence.expectedAmount)
+					: null;
+		const nextDueAmount = data.actualAmount;
+
+		if (
+			occurrence.status === "paid" &&
+			currentDueAmount !== null &&
+			Math.abs(nextDueAmount - currentDueAmount) > 0.005
+		) {
+			return {
+				success: false,
+				error: "Não é possível alterar o valor financeiro de uma ocorrência paga.",
+			};
+		}
+
+		if (paidAmount > 0 && nextDueAmount + 0.005 < paidAmount) {
+			return {
+				success: false,
+				error: "O novo valor não pode ser menor que o valor já pago.",
+			};
+		}
+
+		let nextStatus: typeof occurrence.status = occurrence.status;
+		if (paidAmount > 0) {
+			nextStatus = nextDueAmount + 0.005 >= paidAmount ? "paid" : "partial";
+		} else if (occurrence.status === "awaiting_amount") {
+			nextStatus = "pending";
+		}
+
+		await db
+			.update(accountsPayableOccurrences)
+			.set({
+				dueDate: data.dueDate,
+				actualAmount: formatDecimalForDbRequired(nextDueAmount),
+				status: nextStatus,
+				updatedAt: new Date(),
+			})
+			.where(eq(accountsPayableOccurrences.id, data.occurrenceId));
+
+		revalidateForEntity("payables", user.id);
+		return { success: true, message: "Ocorrência atualizada com sucesso." };
 	} catch (error) {
 		return handleActionError(error);
 	}
