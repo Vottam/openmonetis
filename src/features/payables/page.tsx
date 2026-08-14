@@ -1296,11 +1296,10 @@ export function PayablesPage({
 	};
 
 	const openMonthlyInform = (item: MonthlyPayableOccurrence) => {
-		const payable = findPayableById(item.payable.id);
-		if (!payable) {
-			toast.error("Conta a pagar não encontrada.");
-			return;
-		}
+		const payable = findPayableById(item.payable.id) ?? ({
+			payable: item.payable,
+			occurrences: [],
+		} as unknown as PayableWithOccurrences);
 		setSelectedPayable(payable);
 		setDetailOpen(false);
 		setInformTarget({
@@ -1310,11 +1309,10 @@ export function PayablesPage({
 	};
 
 	const openMonthlyEdit = (item: MonthlyPayableOccurrence) => {
-		const payable = findPayableById(item.payable.id);
-		if (!payable) {
-			toast.error("Conta a pagar não encontrada.");
-			return;
-		}
+		const payable = findPayableById(item.payable.id) ?? ({
+			payable: item.payable,
+			occurrences: [],
+		} as unknown as PayableWithOccurrences);
 		setSelectedPayable(payable);
 		setDetailOpen(false);
 		setEditTarget({
@@ -1324,11 +1322,10 @@ export function PayablesPage({
 	};
 
 	const openMonthlyPay = (item: MonthlyPayableOccurrence) => {
-		const payable = findPayableById(item.payable.id);
-		if (!payable) {
-			toast.error("Conta a pagar não encontrada.");
-			return;
-		}
+		const payable = findPayableById(item.payable.id) ?? ({
+			payable: item.payable,
+			occurrences: [],
+		} as unknown as PayableWithOccurrences);
 		setSelectedPayable(payable);
 		setDetailOpen(false);
 		setPayTarget({
