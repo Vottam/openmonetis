@@ -19,5 +19,7 @@ export default async function PayableHistoryPage({
 		notFound();
 	}
 
-	return <PayablesPage data={data} initialPayableId={payableId} mode="history" />;
+	return (
+		<PayablesPage data={data} initialPayableId={payableId} mode="history" />
+	);
 }

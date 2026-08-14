@@ -82,9 +82,8 @@ function validatePayableAmountRules(data: {
 	defaultAmount?: number | null;
 }) {
 	if (data.recurrenceType === "monthly_variable") {
-		if (data.defaultAmount !== null && data.defaultAmount !== undefined) {
-			return "Contas variáveis não devem receber valor padrão.";
-		}
+		// monthly_variable pode ter defaultAmount opcional (valor estimado)
+		// ou pode não ter (valor a informar futuramente)
 		return null;
 	}
 
@@ -249,7 +248,7 @@ export async function updatePayableAction(
 				recurrenceType: data.recurrenceType,
 				defaultAmount:
 					data.recurrenceType === "monthly_variable"
-						? null
+						? formatDecimalForDbRequired(data.defaultAmount ?? 0)
 						: formatDecimalForDbRequired(data.defaultAmount ?? 0),
 				dueDay:
 					data.recurrenceType === "once" ? null : getDueDay(data.startsAt),
@@ -359,6 +358,7 @@ export async function informOccurrenceAmountAction(
 			.select({
 				occurrenceId: accountsPayableOccurrences.id,
 				status: accountsPayableOccurrences.status,
+				expectedAmount: accountsPayableOccurrences.expectedAmount,
 				payableId: accountsPayable.id,
 			})
 			.from(accountsPayableOccurrences)
@@ -378,7 +378,15 @@ export async function informOccurrenceAmountAction(
 		if (!current) {
 			return { success: false, error: "Ocorrência não encontrada." };
 		}
-		if (current.status !== "awaiting_amount") {
+		// Permitir atualizar valor para:
+		// 1. awaiting_amount (caso original - sem valor informado)
+		// 2. monthly_variable estimada (pending com expectedAmount mas sem actualAmount)
+		const isEstimatedMonthlyVariable =
+			current.payableId &&
+			current.status === "pending" &&
+			current.expectedAmount !== null;
+
+		if (current.status !== "awaiting_amount" && !isEstimatedMonthlyVariable) {
 			return { success: false, error: "Esta ocorrência já possui valor." };
 		}
 

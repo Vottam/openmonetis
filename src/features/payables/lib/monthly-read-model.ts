@@ -1,5 +1,5 @@
-import { comparePeriods, parsePeriod } from "@/shared/utils/period";
 import { toDateOnlyString } from "@/shared/utils/date";
+import { comparePeriods, parsePeriod } from "@/shared/utils/period";
 import type {
 	PayableOccurrence,
 	PayableOccurrenceStatus,
@@ -155,6 +155,8 @@ export function computeMonthlySummary(
 			continue;
 		}
 
+		// Incluir expectedAmount no totalKnown mesmo se status for awaiting_amount
+		// Isso permite que valores estimados participem de projeções/orçamento
 		if (
 			occurrence.expectedAmount !== null &&
 			occurrence.expectedAmount !== undefined
@@ -166,7 +168,12 @@ export function computeMonthlySummary(
 			paid += occurrence.paidAmount ?? 0;
 		}
 
-		if (occurrence.status === "awaiting_amount") {
+		// Contar como awaitingAmount apenas se realmente não tem expectedAmount
+		if (
+			occurrence.status === "awaiting_amount" &&
+			(occurrence.expectedAmount === null ||
+				occurrence.expectedAmount === undefined)
+		) {
 			awaitingAmountCount += 1;
 			continue;
 		}
@@ -441,7 +448,9 @@ export function buildOperationalMonthlyPayableOccurrences(
 	return payables.flatMap((entry) =>
 		entry.occurrences
 			.filter((occurrence) => isVisibleInOperationalWindow(occurrence, bounds))
-			.map((occurrence) => toDetailedOccurrence({ payable: entry.payable }, occurrence)),
+			.map((occurrence) =>
+				toDetailedOccurrence({ payable: entry.payable }, occurrence),
+			),
 	);
 }
 
@@ -451,7 +460,9 @@ export function buildHistoricalPayableOccurrences(
 	return payables.flatMap((entry) =>
 		entry.occurrences
 			.filter((occurrence) => occurrence.status !== "cancelled")
-			.map((occurrence) => toDetailedOccurrence({ payable: entry.payable }, occurrence)),
+			.map((occurrence) =>
+				toDetailedOccurrence({ payable: entry.payable }, occurrence),
+			),
 	);
 }
 

@@ -48,6 +48,12 @@ export function MonthlyOccurrenceCard({
 		item.occurrence.status === "partial" && (remaining ?? 0) > 0;
 	const showInformAmount = item.occurrence.status === "awaiting_amount";
 
+	// Detectar valor estimado: monthly_variable com expectedAmount mas sem actualAmount
+	const isEstimated =
+		item.payable.recurrenceType === "monthly_variable" &&
+		item.occurrence.expectedAmount !== null &&
+		item.occurrence.actualAmount === null;
+
 	return (
 		<Card className="overflow-hidden">
 			<CardContent className="p-0">
@@ -107,6 +113,11 @@ export function MonthlyOccurrenceCard({
 										{amountKnown !== null
 											? formatCurrency(amountKnown)
 											: "Sem valor"}
+										{isEstimated ? (
+											<Badge variant="secondary" className="ml-1">
+												Estimado
+											</Badge>
+										) : null}
 									</span>
 									{item.occurrence.status !== "awaiting_amount" ? (
 										<span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1">
@@ -131,6 +142,16 @@ export function MonthlyOccurrenceCard({
 							<Button type="button" variant="outline" onClick={onInformAmount}>
 								<RiInformationLine className="size-4" />
 								Informar valor
+							</Button>
+						) : null}
+						{isEstimated ? (
+							<Button
+								type="button"
+								variant="outline"
+								onClick={onInformAmount}
+								title="Informar valor real desta competência"
+							>
+								Atualizar valor
 							</Button>
 						) : null}
 						{showPartialButton ? (

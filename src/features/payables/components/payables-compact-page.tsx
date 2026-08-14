@@ -7,12 +7,15 @@ import {
 	RiPencilLine,
 } from "@remixicon/react";
 import { CategoryIcon } from "@/features/categories/components/category-icon";
-import {
-	type MonthlyPayableOccurrence,
-	type MonthlySummary,
-} from "@/features/payables/lib/monthly-read-model";
-import type { PayableOccurrence, PayableWithOccurrences } from "@/features/payables/lib/types";
 import { MonthlyPeriodSelector } from "@/features/payables/components/MonthlyPeriodSelector";
+import type {
+	MonthlyPayableOccurrence,
+	MonthlySummary,
+} from "@/features/payables/lib/monthly-read-model";
+import type {
+	PayableOccurrence,
+	PayableWithOccurrences,
+} from "@/features/payables/lib/types";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent } from "@/shared/components/ui/card";
@@ -36,9 +39,10 @@ const DATE_FORMAT: Intl.DateTimeFormatOptions = {
 function formatMonthLabel(period: string): string {
 	const [year, month] = period.split("-").map(Number);
 	if (!year || !month) return period;
-	return new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(
-		new Date(Date.UTC(year, month - 1, 1)),
-	);
+	return new Intl.DateTimeFormat("pt-BR", {
+		month: "long",
+		year: "numeric",
+	}).format(new Date(Date.UTC(year, month - 1, 1)));
 }
 
 function lastPaymentDate(occurrence: PayableOccurrence): string | null {
@@ -46,7 +50,10 @@ function lastPaymentDate(occurrence: PayableOccurrence): string | null {
 }
 
 function statusBadges(occurrence: PayableOccurrence) {
-	const badges: Array<{ label: string; variant: "default" | "outline" | "destructive" | "secondary" }> = [];
+	const badges: Array<{
+		label: string;
+		variant: "default" | "outline" | "destructive" | "secondary";
+	}> = [];
 
 	switch (occurrence.status) {
 		case "awaiting_amount":
@@ -62,7 +69,10 @@ function statusBadges(occurrence: PayableOccurrence) {
 			badges.push({ label: "Agendada", variant: "secondary" });
 			break;
 		default:
-			badges.push({ label: occurrence.isOverdue ? "Vencida" : "Pendente", variant: occurrence.isOverdue ? "destructive" : "outline" });
+			badges.push({
+				label: occurrence.isOverdue ? "Vencida" : "Pendente",
+				variant: occurrence.isOverdue ? "destructive" : "outline",
+			});
 	}
 
 	if (occurrence.status === "partial" && occurrence.isOverdue) {
@@ -127,17 +137,25 @@ export function PayablesCompactPage({
 						<span>Contas a pagar</span>
 					</div>
 					<h1 className="text-3xl font-bold tracking-tight">{titleText}</h1>
-					<p className="max-w-3xl text-sm text-muted-foreground sm:text-base">{descriptionText}</p>
+					<p className="max-w-3xl text-sm text-muted-foreground sm:text-base">
+						{descriptionText}
+					</p>
 				</div>
 			</div>
 
 			{view === "operational" && onPeriodChange ? (
-				<MonthlyPeriodSelector period={period} onPeriodChange={onPeriodChange} />
+				<MonthlyPeriodSelector
+					period={period}
+					onPeriodChange={onPeriodChange}
+				/>
 			) : null}
 
 			<div className="grid gap-3 sm:grid-cols-3">
 				<SummaryCard label="Pago" value={formatCurrency(summary.paid)} />
-				<SummaryCard label="A pagar" value={formatCurrency(summary.remaining)} />
+				<SummaryCard
+					label="A pagar"
+					value={formatCurrency(summary.remaining)}
+				/>
 				<SummaryCard label="Total" value={formatCurrency(summary.totalKnown)} />
 			</div>
 
@@ -145,7 +163,9 @@ export function PayablesCompactPage({
 				<div className="flex items-center justify-between gap-3">
 					<div>
 						<h2 className="text-xl font-semibold">
-							{view === "operational" ? "Visão operacional" : "Histórico completo"}
+							{view === "operational"
+								? "Visão operacional"
+								: "Histórico completo"}
 						</h2>
 						<p className="text-sm text-muted-foreground">
 							{view === "operational"
@@ -177,46 +197,131 @@ export function PayablesCompactPage({
 								const badges = statusBadges(occurrence);
 								return (
 									<TableRow key={occurrence.id}>
-										<TableCell className="whitespace-nowrap font-medium">{occurrence.period}</TableCell>
+										<TableCell className="whitespace-nowrap font-medium">
+											{occurrence.period}
+										</TableCell>
 										<TableCell>
-											<button type="button" className="text-left font-medium hover:underline" onClick={() => onOpenOccurrenceDetails(occurrence)}>
+											<button
+												type="button"
+												className="text-left font-medium hover:underline"
+												onClick={() => onOpenOccurrenceDetails(occurrence)}
+											>
 												{item.payable.description}
 											</button>
-											<div className="text-xs text-muted-foreground">{item.payable.supplierName}</div>
+											<div className="text-xs text-muted-foreground">
+												{item.payable.supplierName}
+											</div>
 										</TableCell>
 										<TableCell>
 											<div className="flex items-center gap-2">
-												<CategoryIcon name={item.payable.categoryIcon} className="size-4" />
-												<span>{item.payable.categoryName ?? "Sem categoria"}</span>
+												<CategoryIcon
+													name={item.payable.categoryIcon}
+													className="size-4"
+												/>
+												<span>
+													{item.payable.categoryName ?? "Sem categoria"}
+												</span>
 											</div>
 										</TableCell>
 										<TableCell>
-											{occurrence.expectedAmount !== null
-												? formatCurrency(occurrence.expectedAmount)
-												: occurrence.status === "awaiting_amount"
-													? "Aguardando valor"
-													: "—"}
+											{occurrence.expectedAmount !== null ? (
+												<>
+													{formatCurrency(occurrence.expectedAmount)}
+													{item.payable.recurrenceType === "monthly_variable" &&
+													occurrence.actualAmount === null ? (
+														<Badge variant="secondary" className="ml-1">
+															Estimado
+														</Badge>
+													) : null}
+												</>
+											) : occurrence.status === "awaiting_amount" ? (
+												"Aguardando valor"
+											) : (
+												"—"
+											)}
 										</TableCell>
-										<TableCell>{formatFinancialDateLabel(occurrence.dueDate, "", DATE_FORMAT)?.trim() ?? occurrence.dueDate}</TableCell>
+										<TableCell>
+											{formatFinancialDateLabel(
+												occurrence.dueDate,
+												"",
+												DATE_FORMAT,
+											)?.trim() ?? occurrence.dueDate}
+										</TableCell>
 										<TableCell>
 											<div className="flex flex-wrap gap-1">
 												{badges.map((badge) => (
-													<Badge key={badge.label} variant={badge.variant}>{badge.label}</Badge>
+													<Badge key={badge.label} variant={badge.variant}>
+														{badge.label}
+													</Badge>
 												))}
 											</div>
 										</TableCell>
-										<TableCell>{paymentDate ? (formatFinancialDateLabel(paymentDate, "", DATE_FORMAT)?.trim() ?? paymentDate) : "—"}</TableCell>
+										<TableCell>
+											{paymentDate
+												? (formatFinancialDateLabel(
+														paymentDate,
+														"",
+														DATE_FORMAT,
+													)?.trim() ?? paymentDate)
+												: "—"}
+										</TableCell>
 										<TableCell>
 											<div className="flex justify-end gap-2">
 												{onOpenHistory ? (
-													<Button type="button" size="sm" variant="outline" onClick={() => onOpenHistory(item)}>
+													<Button
+														type="button"
+														size="sm"
+														variant="outline"
+														onClick={() => onOpenHistory(item)}
+													>
 														<RiHistoryLine className="size-4" />
 														Histórico
 													</Button>
 												) : null}
-												{occurrence.status === "awaiting_amount" ? <Button type="button" size="sm" variant="outline" onClick={() => onInformAmount(occurrence)}>Informar valor</Button> : null}
-												{occurrence.status === "pending" || occurrence.status === "partial" ? <Button type="button" size="sm" onClick={() => onPay(occurrence)}>{occurrence.status === "partial" && (occurrence.remainingAmount ?? 0) > 0 ? "Pagar restante" : "Pagar"}</Button> : null}
-												<Button type="button" size="sm" variant="outline" onClick={() => onOpenOccurrenceDetails(occurrence)}>Detalhes</Button>
+												{occurrence.status === "awaiting_amount" ? (
+													<Button
+														type="button"
+														size="sm"
+														variant="outline"
+														onClick={() => onInformAmount(occurrence)}
+													>
+														Informar valor
+													</Button>
+												) : null}
+												{item.payable.recurrenceType === "monthly_variable" &&
+												occurrence.expectedAmount !== null &&
+												occurrence.actualAmount === null ? (
+													<Button
+														type="button"
+														size="sm"
+														variant="outline"
+														onClick={() => onInformAmount(occurrence)}
+														title="Informar valor real desta competência"
+													>
+														Atualizar valor
+													</Button>
+												) : null}
+												{occurrence.status === "pending" ||
+												occurrence.status === "partial" ? (
+													<Button
+														type="button"
+														size="sm"
+														onClick={() => onPay(occurrence)}
+													>
+														{occurrence.status === "partial" &&
+														(occurrence.remainingAmount ?? 0) > 0
+															? "Pagar restante"
+															: "Pagar"}
+													</Button>
+												) : null}
+												<Button
+													type="button"
+													size="sm"
+													variant="outline"
+													onClick={() => onOpenOccurrenceDetails(occurrence)}
+												>
+													Detalhes
+												</Button>
 											</div>
 										</TableCell>
 									</TableRow>
@@ -235,25 +340,101 @@ export function PayablesCompactPage({
 								<CardContent className="space-y-3 p-4">
 									<div className="flex items-start gap-3">
 										<div className="rounded-lg border bg-muted/30 p-2">
-											<CategoryIcon name={item.payable.categoryIcon} className="size-5" />
+											<CategoryIcon
+												name={item.payable.categoryIcon}
+												className="size-5"
+											/>
 										</div>
 										<div className="min-w-0 flex-1 space-y-2">
 											<div className="flex flex-wrap items-center gap-2">
-												<h3 className="truncate text-base font-semibold">{item.payable.description}</h3>
+												<h3 className="truncate text-base font-semibold">
+													{item.payable.description}
+												</h3>
 												{badges.map((badge) => (
-													<Badge key={badge.label} variant={badge.variant}>{badge.label}</Badge>
+													<Badge key={badge.label} variant={badge.variant}>
+														{badge.label}
+													</Badge>
 												))}
 											</div>
-											<p className="text-sm text-muted-foreground">{item.payable.supplierName}</p>
-											<p className="text-sm text-muted-foreground">Competência {occurrence.period} · {formatFinancialDateLabel(occurrence.dueDate, "Vence em", DATE_FORMAT)}</p>
-											<p className="text-sm text-muted-foreground">{item.payable.categoryName ?? "Sem categoria"}</p>
-											<p className="text-sm font-medium">{occurrence.expectedAmount !== null ? formatCurrency(occurrence.expectedAmount) : occurrence.status === "awaiting_amount" ? "Aguardando valor" : "Sem valor"}</p>
+											<p className="text-sm text-muted-foreground">
+												{item.payable.supplierName}
+											</p>
+											<p className="text-sm text-muted-foreground">
+												Competência {occurrence.period} ·{" "}
+												{formatFinancialDateLabel(
+													occurrence.dueDate,
+													"Vence em",
+													DATE_FORMAT,
+												)}
+											</p>
+											<p className="text-sm text-muted-foreground">
+												{item.payable.categoryName ?? "Sem categoria"}
+											</p>
+											<p className="text-sm font-medium">
+												{occurrence.expectedAmount !== null ? (
+													<>
+														{formatCurrency(occurrence.expectedAmount)}
+														{item.payable.recurrenceType ===
+															"monthly_variable" &&
+														occurrence.actualAmount === null ? (
+															<Badge variant="secondary" className="ml-1">
+																Estimado
+															</Badge>
+														) : null}
+													</>
+												) : occurrence.status === "awaiting_amount" ? (
+													"Aguardando valor"
+												) : (
+													"Sem valor"
+												)}
+											</p>
 										</div>
 									</div>
 									<div className="flex flex-wrap gap-2">
-										{occurrence.status === "awaiting_amount" ? <Button type="button" variant="outline" size="sm" onClick={() => onInformAmount(occurrence)}>Informar valor</Button> : null}
-										{occurrence.status === "pending" || occurrence.status === "partial" ? <Button type="button" size="sm" onClick={() => onPay(occurrence)}>{occurrence.status === "partial" && (occurrence.remainingAmount ?? 0) > 0 ? "Pagar restante" : "Pagar"}</Button> : null}
-										<Button type="button" variant="outline" size="sm" onClick={() => onOpenOccurrenceDetails(occurrence)}>Detalhes</Button>
+										{occurrence.status === "awaiting_amount" ? (
+											<Button
+												type="button"
+												variant="outline"
+												size="sm"
+												onClick={() => onInformAmount(occurrence)}
+											>
+												Informar valor
+											</Button>
+										) : null}
+										{item.payable.recurrenceType === "monthly_variable" &&
+										occurrence.expectedAmount !== null &&
+										occurrence.actualAmount === null ? (
+											<Button
+												type="button"
+												variant="outline"
+												size="sm"
+												onClick={() => onInformAmount(occurrence)}
+												title="Informar valor real desta competência"
+											>
+												Atualizar valor
+											</Button>
+										) : null}
+										{occurrence.status === "pending" ||
+										occurrence.status === "partial" ? (
+											<Button
+												type="button"
+												size="sm"
+												onClick={() => onPay(occurrence)}
+											>
+												{occurrence.status === "partial" &&
+												(occurrence.remainingAmount ?? 0) > 0
+													? "Pagar restante"
+													: "Pagar"}
+											</Button>
+										) : null}
+										<Button
+											type="button"
+											variant="outline"
+											size="sm"
+											onClick={() => onOpenOccurrenceDetails(occurrence)}
+										>
+											Detalhes
+										</Button>
 									</div>
 								</CardContent>
 							</Card>
@@ -266,8 +447,12 @@ export function PayablesCompactPage({
 				<section className="space-y-4">
 					<div className="flex items-center justify-between gap-3">
 						<div>
-							<h2 className="text-xl font-semibold">Cadastros de Contas a Pagar</h2>
-							<p className="text-sm text-muted-foreground">Templates separados das ocorrências mensais.</p>
+							<h2 className="text-xl font-semibold">
+								Cadastros de Contas a Pagar
+							</h2>
+							<p className="text-sm text-muted-foreground">
+								Templates separados das ocorrências mensais.
+							</p>
 						</div>
 						<Badge variant="outline">{payables.length} cadastro(s)</Badge>
 					</div>
@@ -289,24 +474,73 @@ export function PayablesCompactPage({
 								{payables.map((item) => (
 									<TableRow key={item.payable.id}>
 										<TableCell>
-											<button type="button" className="font-medium hover:underline" onClick={() => onOpenPayableDetails(item)}>
+											<button
+												type="button"
+												className="font-medium hover:underline"
+												onClick={() => onOpenPayableDetails(item)}
+											>
 												{item.payable.description}
 											</button>
-											<div className="text-xs text-muted-foreground">{item.payable.supplierName}</div>
+											<div className="text-xs text-muted-foreground">
+												{item.payable.supplierName}
+											</div>
 										</TableCell>
-										<TableCell>{item.payable.categoryName ?? "Sem categoria"}</TableCell>
-										<TableCell>{item.payable.defaultAmount !== null ? formatCurrency(item.payable.defaultAmount) : "—"}</TableCell>
+										<TableCell>
+											{item.payable.categoryName ?? "Sem categoria"}
+										</TableCell>
+										<TableCell>
+											{item.payable.defaultAmount !== null
+												? formatCurrency(item.payable.defaultAmount)
+												: "—"}
+										</TableCell>
 										<TableCell>{item.payable.recurrenceType}</TableCell>
-										<TableCell>{formatFinancialDateLabel(item.payable.startsAt, "", DATE_FORMAT)?.trim() ?? item.payable.startsAt}</TableCell>
-										<TableCell><Badge variant={item.payable.status === "active" ? "outline" : "destructive"}>{item.payable.status === "active" ? "Ativa" : "Cancelada"}</Badge></TableCell>
+										<TableCell>
+											{formatFinancialDateLabel(
+												item.payable.startsAt,
+												"",
+												DATE_FORMAT,
+											)?.trim() ?? item.payable.startsAt}
+										</TableCell>
+										<TableCell>
+											<Badge
+												variant={
+													item.payable.status === "active"
+														? "outline"
+														: "destructive"
+												}
+											>
+												{item.payable.status === "active"
+													? "Ativa"
+													: "Cancelada"}
+											</Badge>
+										</TableCell>
 										<TableCell>
 											<div className="flex justify-end gap-2">
-												<Button type="button" variant="outline" size="sm" onClick={() => onEditPayable(item)}>
+												<Button
+													type="button"
+													variant="outline"
+													size="sm"
+													onClick={() => onEditPayable(item)}
+												>
 													<RiPencilLine className="size-4" />
 													Editar cadastro
 												</Button>
-												<Button type="button" variant="outline" size="sm" onClick={() => onCancelPayable(item)}>Cancelar</Button>
-												<Button type="button" variant="destructive" size="sm" onClick={() => onDeletePayable(item)}>Excluir</Button>
+												<Button
+													type="button"
+													variant="outline"
+													size="sm"
+													onClick={() => onCancelPayable(item)}
+												>
+													Cancelar
+												</Button>
+												<Button
+													type="button"
+													variant="destructive"
+													size="sm"
+													onClick={() => onDeletePayable(item)}
+												>
+													Excluir
+												</Button>
 											</div>
 										</TableCell>
 									</TableRow>

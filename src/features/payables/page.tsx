@@ -151,9 +151,25 @@ function formatMoneyValue(value: number | null | undefined): string {
 			}).format(value);
 }
 
-function formatOccurrenceTitle(occurrence: PayableOccurrence): string {
+function formatOccurrenceTitle(
+	occurrence: PayableOccurrence,
+	payable?: Payable,
+): string {
+	// Valor estimado: monthly_variable com expectedAmount mas sem actualAmount
+	const isEstimated =
+		payable?.recurrenceType === "monthly_variable" &&
+		occurrence.expectedAmount !== null &&
+		occurrence.actualAmount === null;
+
 	if (occurrence.status === "awaiting_amount") {
+		if (isEstimated) {
+			return formatMoneyValue(occurrence.expectedAmount) + " (Estimado)";
+		}
 		return "Aguardando valor";
+	}
+
+	if (isEstimated) {
+		return formatMoneyValue(occurrence.expectedAmount) + " (Estimado)";
 	}
 
 	if (occurrence.expectedAmount !== null) {
@@ -193,8 +209,7 @@ function buildInitialFormState(
 		recurrenceType: payable?.payable.recurrenceType ?? "once",
 		defaultAmount:
 			payable?.payable.defaultAmount !== null &&
-			payable?.payable.defaultAmount !== undefined &&
-			payable?.payable.recurrenceType !== "monthly_variable"
+			payable?.payable.defaultAmount !== undefined
 				? String(payable.payable.defaultAmount)
 				: "",
 		startsAt: toInputDate(payable?.payable.startsAt),
@@ -269,6 +284,7 @@ function PayableFormDialog({
 	}, [open, payable]);
 
 	const amountRequired = form.recurrenceType !== "monthly_variable";
+	const showEstimatedAmount = form.recurrenceType === "monthly_variable";
 	const showEndsAt = form.recurrenceType !== "once";
 	const dueDateLabel =
 		form.recurrenceType === "once" ? "Vencimento" : "Primeiro vencimento";
@@ -305,7 +321,7 @@ function PayableFormDialog({
 			supplierName: form.supplierName.trim(),
 			categoryId: form.categoryId || null,
 			recurrenceType: form.recurrenceType,
-			defaultAmount: amountRequired ? amountValue : null,
+			defaultAmount: amountValue,
 			startsAt,
 			endsAt: showEndsAt && form.endsAt ? form.endsAt : null,
 		};
@@ -441,6 +457,26 @@ function PayableFormDialog({
 								}
 								placeholder="0,00"
 							/>
+						</div>
+					) : null}
+					{showEstimatedAmount ? (
+						<div className="space-y-2">
+							<Label htmlFor="payable-estimated-amount">Valor estimado</Label>
+							<Input
+								id="payable-estimated-amount"
+								value={form.defaultAmount}
+								onChange={(event) =>
+									setForm((current) => ({
+										...current,
+										defaultAmount: event.target.value,
+									}))
+								}
+								placeholder="0,00"
+							/>
+							<p className="text-xs text-muted-foreground">
+								Valor usado como previsão para competências futuras. Poderá ser
+								ajustado quando o valor real chegar.
+							</p>
 						</div>
 					) : null}
 
@@ -593,6 +629,10 @@ function PayableDetailDialog({
 								openOccurrences.map((occurrence) => {
 									const visualStatus =
 										payableOccurrenceVisualStatus(occurrence);
+									const isEstimated =
+										payable.payable.recurrenceType === "monthly_variable" &&
+										occurrence.expectedAmount !== null &&
+										occurrence.actualAmount === null;
 									return (
 										<div
 											key={occurrence.id}
@@ -619,7 +659,7 @@ function PayableDetailDialog({
 											</div>
 											<div className="flex items-center gap-2">
 												<span className="text-sm font-medium">
-													{formatOccurrenceTitle(occurrence)}
+													{formatOccurrenceTitle(occurrence, payable.payable)}
 												</span>
 												{occurrence.status === "awaiting_amount" ? (
 													<Button
@@ -629,6 +669,17 @@ function PayableDetailDialog({
 														onClick={() => onInformAmount(occurrence)}
 													>
 														Informar valor
+													</Button>
+												) : null}
+												{isEstimated ? (
+													<Button
+														type="button"
+														size="sm"
+														variant="outline"
+														onClick={() => onInformAmount(occurrence)}
+														title="Informar valor real desta competência"
+													>
+														Atualizar valor
 													</Button>
 												) : null}
 												{occurrence.status === "pending" ||
@@ -1023,9 +1074,10 @@ export function PayablesPage({
 	const historyPayable = useMemo(
 		() =>
 			mode === "history" && initialPayableId
-				? data.payables.find((item) => item.payable.id === initialPayableId) ?? null
+				? (data.payables.find((item) => item.payable.id === initialPayableId) ??
+					null)
 				: null,
-		[ data.payables, initialPayableId, mode ],
+		[data.payables, initialPayableId, mode],
 	);
 	const monthlySummary = useMemo(
 		() =>
@@ -1160,7 +1212,11 @@ export function PayablesPage({
 		return (
 			<div className="space-y-8">
 				<div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-					<Button variant="outline" type="button" onClick={() => router.push("/payables")}>
+					<Button
+						variant="outline"
+						type="button"
+						onClick={() => router.push("/payables")}
+					>
 						<RiArrowLeftSLine className="size-4" />
 						Voltar
 					</Button>

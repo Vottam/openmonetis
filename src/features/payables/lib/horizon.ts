@@ -154,9 +154,11 @@ export function buildPayableOccurrenceSeeds({
 	const defaultAmount =
 		template.defaultAmount === null ? null : Number(template.defaultAmount);
 	const expectedAmount =
-		template.recurrenceType === "monthly_variable" ? null : defaultAmount;
+		template.recurrenceType === "monthly_variable" && defaultAmount === null
+			? null
+			: defaultAmount;
 	const baseStatus: PayableOccurrenceStatus =
-		template.recurrenceType === "monthly_variable"
+		template.recurrenceType === "monthly_variable" && defaultAmount === null
 			? "awaiting_amount"
 			: "pending";
 
