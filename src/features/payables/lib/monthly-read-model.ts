@@ -1,5 +1,7 @@
 import { comparePeriods, parsePeriod } from "@/shared/utils/period";
+import { toDateOnlyString } from "@/shared/utils/date";
 import type {
+	PayableOccurrence,
 	PayableOccurrenceStatus,
 	PayablePayment,
 	PayableRecurrenceType,
@@ -33,6 +35,7 @@ export type MonthlyPayableOccurrence = {
 	};
 	occurrence: {
 		id: string;
+		payableId: string;
 		period: string;
 		dueDate: string;
 		expectedAmount: number | null;
@@ -42,10 +45,13 @@ export type MonthlyPayableOccurrence = {
 		status: PayableOccurrenceStatus;
 		isOverdue: boolean;
 		payments: PayablePayment[];
+		createdAt: string;
+		updatedAt: string;
 	};
 };
 
 type OccurrenceLike = {
+	id?: string;
 	period: string | null | undefined;
 	dueDate?: string | null | undefined;
 	expectedAmount?: number | null | undefined;
@@ -55,6 +61,11 @@ type OccurrenceLike = {
 	status: PayableOccurrenceStatus;
 	isOverdue: boolean;
 	payments?: PayablePayment[];
+};
+
+type OccurrenceLikeDetailed = OccurrenceLike & {
+	id: string;
+	payments: PayablePayment[];
 };
 
 function toMinorUnits(value: number): number {
@@ -282,6 +293,7 @@ export function buildMonthlyPayableOccurrences(
 				},
 				occurrence: {
 					id: occurrence.id,
+					payableId: occurrence.payableId,
 					period: occurrence.period,
 					dueDate: occurrence.dueDate,
 					expectedAmount: occurrence.expectedAmount,
@@ -291,6 +303,8 @@ export function buildMonthlyPayableOccurrences(
 					status: occurrence.status,
 					isOverdue: occurrence.isOverdue,
 					payments: occurrence.payments,
+					createdAt: occurrence.createdAt,
+					updatedAt: occurrence.updatedAt,
 				},
 			})),
 	);
@@ -326,6 +340,7 @@ export function buildUpcomingMonthlyPayableOccurrences(
 				},
 				occurrence: {
 					id: occurrence.id,
+					payableId: occurrence.payableId,
 					period: occurrence.period,
 					dueDate: occurrence.dueDate,
 					expectedAmount: occurrence.expectedAmount,
@@ -335,6 +350,8 @@ export function buildUpcomingMonthlyPayableOccurrences(
 					status: occurrence.status,
 					isOverdue: occurrence.isOverdue,
 					payments: occurrence.payments,
+					createdAt: occurrence.createdAt,
+					updatedAt: occurrence.updatedAt,
 				},
 			})),
 	);
@@ -346,4 +363,106 @@ export function toCurrencyCents(value: number): number {
 
 export function fromCurrencyCents(value: number): number {
 	return fromMinorUnits(value);
+}
+
+export function getOperationalPeriodBounds(period: string): {
+	startDate: string;
+	endDate: string;
+} {
+	const { year, month } = parsePeriod(period);
+	const startDate = toDateOnlyString(new Date(Date.UTC(year, month - 1, 1)));
+	const endDate = toDateOnlyString(new Date(Date.UTC(year, month, 0)));
+
+	if (!startDate || !endDate) {
+		throw new Error("Período operacional inválido.");
+	}
+
+	return { startDate, endDate };
+}
+
+function isVisibleInOperationalWindow(
+	occurrence: OccurrenceLike,
+	bounds: ReturnType<typeof getOperationalPeriodBounds>,
+): boolean {
+	if (!hasPeriod(occurrence.period)) {
+		return false;
+	}
+
+	const dueDate = occurrence.dueDate;
+	if (!dueDate) {
+		return false;
+	}
+
+	if (occurrence.status === "cancelled") {
+		return false;
+	}
+
+	if (dueDate > bounds.endDate) {
+		return false;
+	}
+
+	if (dueDate >= bounds.startDate) {
+		return true;
+	}
+
+	return occurrence.status !== "paid";
+}
+
+function toDetailedOccurrence(
+	entry: Pick<MonthlyPayableOccurrence, "payable">,
+	occurrence: PayableOccurrence,
+): MonthlyPayableOccurrence {
+	return {
+		payable: entry.payable,
+		occurrence: {
+			id: occurrence.id,
+			payableId: occurrence.payableId,
+			period: occurrence.period,
+			dueDate: occurrence.dueDate,
+			expectedAmount: occurrence.expectedAmount,
+			actualAmount: occurrence.actualAmount,
+			paidAmount: occurrence.paidAmount,
+			remainingAmount: occurrence.remainingAmount,
+			status: occurrence.status,
+			isOverdue: occurrence.isOverdue,
+			payments: occurrence.payments,
+			createdAt: occurrence.createdAt,
+			updatedAt: occurrence.updatedAt,
+		},
+	};
+}
+
+export function buildOperationalMonthlyPayableOccurrences(
+	payables: readonly PayableWithOccurrences[],
+	period: string,
+): MonthlyPayableOccurrence[] {
+	const bounds = getOperationalPeriodBounds(period);
+
+	return payables.flatMap((entry) =>
+		entry.occurrences
+			.filter((occurrence) => isVisibleInOperationalWindow(occurrence, bounds))
+			.map((occurrence) => toDetailedOccurrence({ payable: entry.payable }, occurrence)),
+	);
+}
+
+export function buildHistoricalPayableOccurrences(
+	payables: readonly PayableWithOccurrences[],
+): MonthlyPayableOccurrence[] {
+	return payables.flatMap((entry) =>
+		entry.occurrences
+			.filter((occurrence) => occurrence.status !== "cancelled")
+			.map((occurrence) => toDetailedOccurrence({ payable: entry.payable }, occurrence)),
+	);
+}
+
+export function getOccurrenceLatestPaymentDate(
+	occurrence: Pick<OccurrenceLike, "payments">,
+): string | null {
+	const payments = occurrence.payments ?? [];
+	if (!payments.length) {
+		return null;
+	}
+
+	const lastPayment = payments[payments.length - 1];
+	return lastPayment?.paidAt ?? null;
 }

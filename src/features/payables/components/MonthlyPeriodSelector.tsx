@@ -36,11 +36,11 @@ export function MonthlyPeriodSelector({
 			<div className="space-y-1">
 				<div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
 					<RiCalendar2Line className="size-4 text-primary" />
-					<span>Competência mensal</span>
+					<span>Mês de vencimento</span>
 				</div>
 				<p className="text-sm text-muted-foreground">
-					{formatPeriodLabel(period)} · navegue por mês sem perder o histórico
-					do navegador.
+					{formatPeriodLabel(period)} · veja contas que vencem neste mês e
+					atrasadas ainda em aberto.
 				</p>
 			</div>
 

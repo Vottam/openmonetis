@@ -1,24 +1,32 @@
 "use client";
 
 import type { MonthlySummary as MonthlySummaryData } from "@/features/payables/lib/monthly-read-model";
+import { Badge } from "@/shared/components/ui/badge";
 import { Progress } from "@/shared/components/ui/progress";
 import { formatCurrency } from "@/shared/utils/currency";
 
 export interface MonthlySummaryProps {
 	period: string;
 	summary: MonthlySummaryData;
+	title?: string;
+	description?: string;
 }
 
-export function MonthlySummary({ period, summary }: MonthlySummaryProps) {
+export function MonthlySummary({
+	period,
+	summary,
+	title,
+	description,
+}: MonthlySummaryProps) {
 	const progress =
 		summary.totalKnown > 0 ? (summary.paid / summary.totalKnown) * 100 : 0;
 	const safeProgress = Number.isFinite(progress)
 		? Math.max(0, Math.min(progress, 100))
 		: 0;
 	const remainingLabel = formatCurrency(summary.remaining);
-	const overdueLabel = formatCurrency(summary.overdue);
 	const paidLabel = formatCurrency(summary.paid);
-	const knownLabel = formatCurrency(summary.totalKnown);
+	const totalLabel = formatCurrency(summary.totalKnown);
+	const overdueLabel = formatCurrency(summary.overdue);
 	const awaitingLabel =
 		summary.awaitingAmountCount === 0
 			? "Nenhuma conta aguardando valor"
@@ -31,42 +39,38 @@ export function MonthlySummary({ period, summary }: MonthlySummaryProps) {
 			<div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
 				<div className="space-y-1">
 					<p className="text-sm font-medium text-muted-foreground">
-						Resumo mensal
+						{title ?? "Resumo operacional"}
 					</p>
 					<h2 className="text-2xl font-semibold tracking-tight">{period}</h2>
 					<p className="text-sm text-muted-foreground">
-						Vencido é sempre um subconjunto do que ainda está a pagar.
+						{description ??
+							"Pago, a pagar e total vêm exatamente do mesmo conjunto de linhas visíveis na tabela."}
 					</p>
 				</div>
 
-				<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-					<SummaryCard
-						label="Total conhecido"
-						value={knownLabel}
-						helper="Soma das ocorrências com valor definido"
-					/>
+				<div className="grid gap-3 sm:grid-cols-3">
 					<SummaryCard
 						label="Pago"
 						value={paidLabel}
-						helper="Valores já quitados"
+						helper="Somente ocorrências com valor conhecido e já quitadas ou parciais"
 						tone="emerald"
 					/>
 					<SummaryCard
 						label="A pagar"
 						value={remainingLabel}
-						helper="Saldo aberto do período"
+						helper="Saldo aberto das ocorrências visíveis"
 						tone="blue"
 					/>
 					<SummaryCard
-						label="Vencido"
-						value={overdueLabel}
-						helper="Saldo aberto em atraso"
-						tone="rose"
+						label="Total"
+						value={totalLabel}
+						helper="Total = Pago + A pagar"
+						tone="slate"
 					/>
 				</div>
 			</div>
 
-			<div className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+			<div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
 				<div>
 					<div className="mb-2 flex items-center justify-between text-sm text-muted-foreground">
 						<span>Progresso do mês</span>
@@ -74,8 +78,17 @@ export function MonthlySummary({ period, summary }: MonthlySummaryProps) {
 					</div>
 					<Progress value={safeProgress} className="h-2" />
 				</div>
-				<div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-					{awaitingLabel}
+				<div className="flex flex-col gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+					<span>{awaitingLabel}</span>
+					{summary.overdue > 0 ? (
+						<Badge variant="destructive" className="w-fit">
+							Vencido {overdueLabel}
+						</Badge>
+					) : (
+						<Badge variant="outline" className="w-fit">
+							Sem vencidos
+						</Badge>
+					)}
 				</div>
 			</div>
 		</section>
@@ -91,15 +104,15 @@ function SummaryCard({
 	label: string;
 	value: string;
 	helper: string;
-	tone?: "emerald" | "blue" | "rose";
+	tone?: "emerald" | "blue" | "slate";
 }) {
 	const toneClass =
 		tone === "emerald"
 			? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700"
 			: tone === "blue"
 				? "border-blue-500/20 bg-blue-500/10 text-blue-700"
-				: tone === "rose"
-					? "border-rose-500/20 bg-rose-500/10 text-rose-700"
+				: tone === "slate"
+					? "border-slate-500/20 bg-slate-500/10 text-slate-700"
 					: "border-border bg-background text-foreground";
 
 	return (

@@ -316,6 +316,22 @@ export async function deletePayableAction(
 			return { success: false, error: "Conta a pagar não encontrada." };
 		}
 
+		const linkedFinancialHistory = await db
+			.select({ id: accountsPayablePayments.id })
+			.from(accountsPayablePayments)
+			.innerJoin(
+				accountsPayableOccurrences,
+				eq(accountsPayablePayments.occurrenceId, accountsPayableOccurrences.id),
+			)
+			.where(eq(accountsPayableOccurrences.payableId, data.id))
+			.limit(1);
+		if (linkedFinancialHistory.length > 0) {
+			return {
+				success: false,
+				error: "Exclusão bloqueada: esta conta possui histórico financeiro.",
+			};
+		}
+
 		await db
 			.delete(accountsPayable)
 			.where(
