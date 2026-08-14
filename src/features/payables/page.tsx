@@ -1403,9 +1403,98 @@ export function PayablesPage({
 					onCancelPayable={(item) => setCancelTarget(item)}
 					onDeletePayable={(item) => setDeleteTarget(item)}
 				/>
-			</div>
-		);
-	}
+				<PayableFormDialog
+					open={formOpen}
+					mode={formMode}
+					payable={selectedPayable}
+					categories={data.categories}
+					onOpenChange={setFormOpen}
+					onSaved={refresh}
+				/>
+				<PayableDetailDialog
+					open={detailOpen}
+					payable={selectedPayable}
+					onOpenChange={setDetailOpen}
+					onEdit={(item) => {
+						setDetailOpen(false);
+						openEdit(item);
+					}}
+					onCancel={(item) => setCancelTarget(item)}
+					onDelete={(item) => setDeleteTarget(item)}
+					onInformAmount={(occurrence) => {
+						setDetailOpen(false);
+						setInformTarget({ payable: selectedPayable ?? null, occurrence });
+					}}
+					onPay={(occurrence) => {
+						setDetailOpen(false);
+						setPayTarget({ payable: selectedPayable ?? null, occurrence });
+					}}
+				/>
+				<InformAmountDialog
+					open={Boolean(informTarget)}
+					occurrence={informTarget?.occurrence ?? null}
+					payable={informTarget?.payable ?? null}
+					onOpenChange={(open) => !open && setInformTarget(null)}
+					onSaved={refresh}
+				/>
+				<OccurrenceEditDialog
+					open={Boolean(editTarget)}
+					occurrence={editTarget?.occurrence ?? null}
+					payable={editTarget?.payable ?? null}
+					onOpenChange={(open) => !open && setEditTarget(null)}
+					onSaved={refresh}
+				/>
+				<PayablePaymentDialog
+					open={Boolean(payTarget)}
+					occurrence={payTarget?.occurrence ?? null}
+					payable={payTarget?.payable ?? null}
+					data={data}
+					onOpenChange={(open) => !open && setPayTarget(null)}
+					onSaved={refresh}
+				/>
+				<ConfirmActionDialog
+					open={Boolean(deleteTarget)}
+					onOpenChange={(open) => !open && setDeleteTarget(null)}
+					title={
+						deleteTarget
+							? `Remover ${deleteTarget.payable.description}?`
+							: "Remover conta a pagar?"
+					}
+					description="Essa ação remove o template e todas as ocorrências associadas."
+					confirmLabel="Remover"
+					pendingLabel="Removendo..."
+					confirmVariant="destructive"
+					onConfirm={async () => {
+						if (deleteTarget) {
+							await handleDelete(deleteTarget);
+						}
+					}}
+				/>
+				<ConfirmActionDialog
+					open={Boolean(cancelTarget)}
+					onOpenChange={(open) => !open && setCancelTarget(null)}
+					title={
+						cancelTarget
+							? `${cancelTarget.payable.status === "cancelled" ? "Ativar" : "Inativar"} ${cancelTarget.payable.description}?`
+							: "Inativar conta a pagar?"
+					}
+					description={
+						cancelTarget?.payable.status === "cancelled"
+							? "A conta a pagar será reativada e as ocorrências serão recalculadas conforme seus pagamentos e vencimentos."
+							: "A conta a pagar será inativada e as ocorrências abertas também serão marcadas como canceladas."
+					}
+					confirmLabel={cancelTarget?.payable.status === "cancelled" ? "Ativar" : "Inativar"}
+					pendingLabel={cancelTarget?.payable.status === "cancelled" ? "Ativando..." : "Inativando..."}
+					confirmVariant={cancelTarget?.payable.status === "cancelled" ? "default" : "destructive"}
+					onConfirm={async () => {
+						if (cancelTarget) {
+							await handleCancel(cancelTarget);
+						}
+					}}
+				/>
+				</div>
+			);
+		}
 
 	return (
 		<div className="space-y-8">
