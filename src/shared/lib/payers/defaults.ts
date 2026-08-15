@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { payers } from "@/db/schema";
 import { db } from "@/shared/lib/db";
 import {
@@ -25,12 +25,12 @@ export async function ensureDefaultPayerForUser(user: SeedUserLike) {
 		return;
 	}
 
-	const hasAnyPagador = await db.query.payers.findFirst({
+	const hasAdminPayer = await db.query.payers.findFirst({
 		columns: { id: true, role: true },
-		where: eq(payers.userId, userId),
+		where: and(eq(payers.userId, userId), eq(payers.role, PAYER_ROLE_ADMIN)),
 	});
 
-	if (hasAnyPagador) {
+	if (hasAdminPayer) {
 		return;
 	}
 

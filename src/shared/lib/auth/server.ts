@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { auth } from "@/shared/lib/auth/config";
+import { ensureDefaultPayerForUser } from "@/shared/lib/payers/defaults";
 
 /**
  * Cached session fetch - deduplicates auth calls within a single request.
@@ -16,6 +17,10 @@ const getSessionCached = cache(async () => {
  * @returns User object
  * @throws Redirects to /login if user is not authenticated
  */
+async function ensureDefaultPayerForSessionUser(user: Parameters<typeof ensureDefaultPayerForUser>[0]) {
+	await ensureDefaultPayerForUser(user);
+}
+
 export async function getUser() {
 	const session = await getSessionCached();
 
@@ -23,6 +28,7 @@ export async function getUser() {
 		redirect("/login");
 	}
 
+	await ensureDefaultPayerForSessionUser(session.user);
 	return session.user;
 }
 
@@ -38,6 +44,7 @@ export async function getUserId() {
 		redirect("/login");
 	}
 
+	await ensureDefaultPayerForSessionUser(session.user);
 	return session.user.id;
 }
 
@@ -53,6 +60,7 @@ export async function getUserSession() {
 		redirect("/login");
 	}
 
+	await ensureDefaultPayerForSessionUser(session.user);
 	return session;
 }
 

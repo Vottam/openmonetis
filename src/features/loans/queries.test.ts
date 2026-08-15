@@ -278,8 +278,14 @@ describe("consultas financeiras de loans", () => {
 			(item) => item.loanType === "fixed",
 		);
 
+		const [rawOperation] = await db
+			.select({ status: loanOperations.status })
+			.from(loanOperations)
+			.where(eq(loanOperations.id, loanOperationId as string));
+
 		expect(detailOperation?.status).toBe("paid");
 		expect(account?.summary.status).toBe("paid");
+		expect(rawOperation?.status).toBe("paid");
 		expect(Number(account?.summary.totalPaid)).toBe(1200);
 		expect(Number(account?.summary.remainingPrincipal)).toBe(0);
 		expect(Number(account?.summary.remainingInterest)).toBe(0);
@@ -335,8 +341,14 @@ describe("consultas financeiras de loans", () => {
 			(item) => item.loanType === "revolving",
 		);
 
+		const [rawOperation] = await db
+			.select({ status: loanOperations.status })
+			.from(loanOperations)
+			.where(eq(loanOperations.id, loanOperationId as string));
+
 		expect(detailOperation?.status).toBe("active");
 		expect(account?.summary.status).toBe("active");
+		expect(rawOperation?.status).toBe("active");
 		expect(Number(account?.summary.remainingPrincipal)).toBe(0);
 		expect(Number(account?.summary.totalPaid)).toBe(1000);
 	});

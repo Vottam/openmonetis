@@ -100,6 +100,48 @@ const updateLoanOperationStatusSchema = z.object({
 	status: z.enum(["active", "paid", "overdue", "cancelled"]),
 });
 
+async function syncLoanOperationStatusAfterPayment(
+	loanOperationId: string,
+	userId: string,
+) {
+	const operation = await db.query.loanOperations.findFirst({
+		columns: { id: true, loanType: true, status: true },
+		where: and(eq(loanOperations.id, loanOperationId), eq(loanOperations.userId, userId)),
+	});
+
+	if (!operation || operation.loanType !== "fixed") {
+		return;
+	}
+
+	const installments = await db.query.loanInstallments.findMany({
+		columns: { expectedValue: true, paidAmount: true },
+		where: and(
+			eq(loanInstallments.loanOperationId, loanOperationId),
+			eq(loanInstallments.userId, userId),
+		),
+	});
+
+	if (installments.length === 0) {
+		return;
+	}
+
+	const allInstallmentsPaid = installments.every((installment) => {
+		const remaining = Number(installment.expectedValue ?? 0) - Number(installment.paidAmount ?? 0);
+		return remaining <= 0.005;
+	});
+
+	if (!allInstallmentsPaid || operation.status === "paid") {
+		return;
+	}
+
+	await db
+		.update(loanOperations)
+		.set({ status: "paid", updatedAt: new Date() })
+		.where(
+			and(eq(loanOperations.id, loanOperationId), eq(loanOperations.userId, userId)),
+		);
+}
+
 async function getCurrentUser() {
 	return getUser();
 }
@@ -524,6 +566,8 @@ export async function recordPaymentAction(input: unknown) {
 					eq(loanInstallments.userId, user.id),
 				),
 			);
+
+		await syncLoanOperationStatusAfterPayment(installment.loanOperationId, user.id);
 
 		revalidateForEntity("loans", user.id);
 
