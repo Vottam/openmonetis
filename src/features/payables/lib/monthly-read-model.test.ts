@@ -205,7 +205,7 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 	});
 
 	describe("sortOccurrencesForDisplay", () => {
-		it("should sort overdue first, then partial, then pending", () => {
+		it("sorts by due date and keeps stable tie-breakers", () => {
 			const occs = [
 				createOccurrence({
 					status: "pending",
@@ -224,16 +224,16 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 				}),
 			];
 			const sorted = sortOccurrencesForDisplay(occs);
-			// overdue (priority 0) should come first
+			expect(sorted.map((item) => item.dueDate)).toEqual([
+				"2026-07-01",
+				"2026-08-10",
+				"2026-08-15",
+			]);
 			expect(sorted[0].status).toBe("pending");
 			expect(sorted[0].isOverdue).toBe(true);
-			// partial (priority 1) should come second
-			expect(sorted[1].status).toBe("partial");
-			// pending (priority 2) should come third
-			expect(sorted[2].status).toBe("pending");
 		});
 
-		it("should sort by due date within same status", () => {
+		it("keeps due date order within the same day", () => {
 			const occs = [
 				createOccurrence({ dueDate: "2026-08-15", isOverdue: false }),
 				createOccurrence({ dueDate: "2026-08-01", isOverdue: false }),
@@ -243,7 +243,7 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 		});
 	});
 	describe("sortMonthlyPayableOccurrencesChronologically", () => {
-		it("sorts by period and then due date", () => {
+		it("sorts by due date before period", () => {
 			const occs: any = [
 				{
 					payable: {
@@ -261,7 +261,7 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 						id: "2",
 						payableId: "b",
 						period: "2026-09",
-						dueDate: "2026-09-15",
+						dueDate: "2026-08-05",
 						expectedAmount: 100,
 						actualAmount: null,
 						paidAmount: 0,
@@ -304,8 +304,8 @@ describe("Monthly Read Model - Phase B2 (Deterministic)", () => {
 			];
 
 			const sorted = sortMonthlyPayableOccurrencesChronologically(occs);
-			expect(sorted.map((item) => item.occurrence.period)).toEqual(["2026-08", "2026-09"]);
-			expect(sorted.map((item) => item.occurrence.id)).toEqual(["1", "2"]);
+			expect(sorted.map((item) => item.occurrence.period)).toEqual(["2026-09", "2026-08"]);
+			expect(sorted.map((item) => item.occurrence.id)).toEqual(["2", "1"]);
 		});
 	});
 });

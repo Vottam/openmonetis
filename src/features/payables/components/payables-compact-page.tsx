@@ -4,7 +4,6 @@ import {
 	RiArrowLeftSLine,
 	RiCalendarEventLine,
 	RiDeleteBin5Line,
-	RiEyeLine,
 	RiMoneyDollarCircleLine,
 	RiPencilLine,
 	RiToggleLine,
@@ -298,13 +297,9 @@ export function PayablesCompactPage({
 											{occurrence.period}
 										</TableCell>
 										<TableCell>
-											<button
-												type="button"
-												className="text-left font-medium hover:underline"
-												onClick={() => onOpenOccurrenceDetails(item)}
-											>
+											<span className="text-left font-medium">
 												{item.payable.description}
-											</button>
+											</span>
 											<div className="text-xs text-muted-foreground">
 												{item.payable.supplierName}
 											</div>
@@ -366,7 +361,7 @@ export function PayablesCompactPage({
 												{actionVisibility.showDetails ? (
 													<IconActionButton
 														label="Ver competências"
-														icon={RiEyeLine}
+														icon={RiCalendarEventLine}
 														onClick={() => onOpenOccurrenceDetails(item)}
 													/>
 												) : null}
@@ -400,11 +395,6 @@ export function PayablesCompactPage({
 														onClick={() => onPay(item)}
 													/>
 												) : null}
-												<IconActionButton
-													label="Detalhes"
-													icon={RiEyeLine}
-													onClick={() => onOpenOccurrenceDetails(item)}
-												/>
 											</div>
 										</TableCell>
 									</TableRow>
@@ -478,7 +468,7 @@ export function PayablesCompactPage({
 										{actionVisibility.showDetails ? (
 											<IconActionButton
 												label="Ver competências"
-												icon={RiEyeLine}
+												icon={RiCalendarEventLine}
 												onClick={() => onOpenOccurrenceDetails(item)}
 											/>
 										) : null}
@@ -512,11 +502,6 @@ export function PayablesCompactPage({
 												onClick={() => onPay(item)}
 											/>
 										) : null}
-										<IconActionButton
-											label="Detalhes"
-											icon={RiEyeLine}
-											onClick={() => onOpenOccurrenceDetails(item)}
-										/>
 									</div>
 								</CardContent>
 							</Card>

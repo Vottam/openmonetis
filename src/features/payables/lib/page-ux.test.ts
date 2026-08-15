@@ -165,7 +165,9 @@ describe("page-ux", () => {
 
 	it("HISTORY_ACTION_WORKS", () => {
 		expect(getOccurrenceActionVisibility(baseItem as never, "operational").showHistory).toBe(true);
+		expect(getOccurrenceActionVisibility(baseItem as never, "operational").showDetails).toBe(true);
 		expect(getOccurrenceActionVisibility(baseItem as never, "history").showHistory).toBe(false);
+		expect(getOccurrenceActionVisibility(baseItem as never, "history").showDetails).toBe(false);
 	});
 
 	it("PAYABLE_HISTORY_ROUTE_WORKS", () => {

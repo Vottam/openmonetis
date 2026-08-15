@@ -277,9 +277,11 @@ export async function fetchPayablesPageData(
 					},
 				},
 			},
-			orderBy: (payable, { asc: ascOrder, desc: descOrder }) => [
-				descOrder(payable.status),
-				ascOrder(payable.createdAt),
+			orderBy: (payable, { asc: ascOrder }) => [
+				ascOrder(payable.startsAt),
+				ascOrder(payable.dueDay),
+				ascOrder(payable.description),
+				ascOrder(payable.id),
 			],
 		}),
 		db

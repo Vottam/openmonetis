@@ -280,65 +280,65 @@ export function getOccurrenceDisplayStatus(
 	return "pending";
 }
 
+function compareNullableStrings(left: string | null | undefined, right: string | null | undefined): number {
+	return (left ?? "").localeCompare(right ?? "");
+}
+
+function compareMonthlyOccurrenceRows(
+	left: MonthlyPayableOccurrence,
+	right: MonthlyPayableOccurrence,
+): number {
+	const dueDateOrder = compareNullableStrings(left.occurrence.dueDate, right.occurrence.dueDate);
+	if (dueDateOrder !== 0) {
+		return dueDateOrder;
+	}
+
+	const periodOrder = compareNullableStrings(left.occurrence.period, right.occurrence.period);
+	if (periodOrder !== 0) {
+		return periodOrder;
+	}
+
+	const titleOrder = compareNullableStrings(
+		left.payable.description?.toLowerCase(),
+		right.payable.description?.toLowerCase(),
+	);
+	if (titleOrder !== 0) {
+		return titleOrder;
+	}
+
+	return compareNullableStrings(left.occurrence.id, right.occurrence.id);
+}
+
+function compareOccurrenceRows<T extends OccurrenceLike>(left: T, right: T): number {
+	const dueDateOrder = compareNullableStrings(left.dueDate, right.dueDate);
+	if (dueDateOrder !== 0) {
+		return dueDateOrder;
+	}
+
+	const periodOrder = compareNullableStrings(left.period, right.period);
+	if (periodOrder !== 0) {
+		return periodOrder;
+	}
+
+	return compareNullableStrings(left.id, right.id);
+}
+
 export function sortOccurrencesForDisplay<T extends OccurrenceLike>(
 	occurrences: readonly T[],
 ): T[] {
-	const priority: Record<string, number> = {
-		overdue: 0,
-		partial: 1,
-		pending: 2,
-		scheduled: 3,
-		awaiting: 4,
-		paid: 5,
-		cancelled: 6,
-	};
-
-	return [...occurrences].sort((left, right) => {
-		const leftStatus = getOccurrenceDisplayStatus(left);
-		const rightStatus = getOccurrenceDisplayStatus(right);
-		const leftPriority = priority[leftStatus] ?? 99;
-		const rightPriority = priority[rightStatus] ?? 99;
-
-		if (leftPriority !== rightPriority) {
-			return leftPriority - rightPriority;
-		}
-
-		return (left.dueDate ?? "").localeCompare(right.dueDate ?? "");
-	});
+	return [...occurrences].sort(compareOccurrenceRows);
 }
 
 export function sortMonthlyPayableOccurrences(
 	occurrences: readonly MonthlyPayableOccurrence[],
 ): MonthlyPayableOccurrence[] {
-	const orderedOccurrenceIds = new Map(
-		sortOccurrencesForDisplay(occurrences.map((item) => item.occurrence)).map(
-			(occurrence, index) => [occurrence.id, index],
-		),
-	);
-
-	return [...occurrences].sort((left, right) => {
-		const leftIndex = orderedOccurrenceIds.get(left.occurrence.id) ?? 0;
-		const rightIndex = orderedOccurrenceIds.get(right.occurrence.id) ?? 0;
-		return leftIndex - rightIndex;
-	});
+	return [...occurrences].sort(compareMonthlyOccurrenceRows);
 }
 
 export function sortMonthlyPayableOccurrencesChronologically(
 	occurrences: readonly MonthlyPayableOccurrence[],
 ): MonthlyPayableOccurrence[] {
-	return [...occurrences].sort((left, right) => {
-		const periodOrder = comparePeriods(left.occurrence.period, right.occurrence.period);
-		if (periodOrder !== 0) {
-			return periodOrder;
-		}
-
-		const dueDateOrder = left.occurrence.dueDate.localeCompare(right.occurrence.dueDate);
-		if (dueDateOrder !== 0) {
-			return dueDateOrder;
-		}
-
-		return left.occurrence.createdAt.localeCompare(right.occurrence.createdAt);
-	});
+	return [...occurrences].sort(compareMonthlyOccurrenceRows);
 }
 
 export function buildMonthlyPayableOccurrences(

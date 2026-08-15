@@ -253,22 +253,15 @@ function summaryOrder(payable: PayableWithOccurrences) {
 		(occurrence) =>
 			occurrence.status !== "cancelled" && occurrence.status !== "paid",
 	);
-	const overdueCount = openOccurrences.filter(
-		(occurrence) => occurrence.isOverdue,
-	).length;
-	const awaitingCount = openOccurrences.filter(
-		(occurrence) => occurrence.status === "awaiting_amount",
-	).length;
 	const nextDue = openOccurrences
 		.slice()
 		.sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
 
 	return [
-		payable.payable.status === "cancelled" ? 2 : 0,
-		-overdueCount,
-		-awaitingCount,
-		nextDue?.dueDate ?? "9999-12-31",
+		nextDue?.dueDate ?? payable.payable.startsAt ?? "9999-12-31",
+		payable.payable.dueDay ?? 99,
 		payable.payable.description.toLowerCase(),
+		payable.payable.id,
 	] as const;
 }
 
